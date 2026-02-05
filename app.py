@@ -215,6 +215,20 @@ def render_expert_options():
             st.warning("⚠️ Utilisation de gTTS (fallback)")
         else:
             st.error("❌ Aucun moteur TTS disponible")
+            
+    # Debug Section
+    with st.sidebar.expander("🛠️ Diagnostic", expanded=False):
+        if st.button("Lancer le diagnostic"):
+            health = check_system_health()
+            
+            st.write("FFmpeg:", "✅" if health["ffmpeg"] else "❌")
+            st.write("Piper Module:", "✅" if health["piper_module"] else "❌")
+            st.write("Piper Bin:", "✅" if health["piper_bin"] else "❌")
+            st.write("Espeak-ng:", "✅" if health["espeak"] else "❌")
+            st.write("Écriture:", "✅" if health["write_access"] else "❌")
+            
+            if not health["piper_module"] and not health["piper_bin"]:
+                st.warning("Piper n'est pas détecté. Le système utilisera gTTS si internet est disponible.")
 
 
 def render_input_tabs():
@@ -237,6 +251,57 @@ def render_input_tabs():
     
     with tab_extract:
         render_extract_mode()
+
+
+def check_system_health():
+    """Diagnostique l'état du système."""
+    health = {
+        "ffmpeg": False,
+        "piper_module": False,
+        "piper_bin": False,
+        "espeak": False,
+        "write_access": False
+    }
+    
+    # 1. Check FFmpeg
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        health["ffmpeg"] = True
+    except:
+        pass
+        
+    # 2. Check Piper Module
+    try:
+        import piper
+        health["piper_module"] = True
+    except ImportError:
+        pass
+        
+    # 3. Check Piper Binary
+    try:
+        subprocess.run(["piper", "--help"], capture_output=True, timeout=2)
+        health["piper_bin"] = True
+    except:
+        pass
+
+    # 4. Check Espeak
+    try:
+        subprocess.run(["espeak-ng", "--version"], capture_output=True, check=True)
+        health["espeak"] = True
+    except:
+        pass
+        
+    # 5. Write Access
+    try:
+        test_file = "test_write.txt"
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        health["write_access"] = True
+    except:
+        pass
+        
+    return health
 
 
 def render_generation_result():
