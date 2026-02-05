@@ -6,3 +6,4 @@ feedparser>=6.0.10
 Pillow>=10.0.0
 requests>=2.31.0
 gTTS>=2.5.0
+piper-tts>=1.2.0
