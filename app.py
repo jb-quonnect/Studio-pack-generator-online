@@ -239,21 +239,21 @@ def render_expert_options():
 
 def render_input_tabs():
     """Affiche les onglets de sélection du type d'entrée."""
-    tab_files, tab_zip, tab_rss, tab_extract = st.tabs([
+    tab_rss, tab_files, tab_zip, tab_extract = st.tabs([
+        "📡 Flux RSS",
         "📁 Fichiers", 
         "📦 Import ZIP", 
-        "📡 Flux RSS",
         "🔄 Extraction"
     ])
     
+    with tab_rss:
+        render_rss_input()
+        
     with tab_files:
         render_file_upload()
     
     with tab_zip:
         render_zip_upload()
-    
-    with tab_rss:
-        render_rss_input()
     
     with tab_extract:
         render_extract_mode()
