@@ -23,8 +23,12 @@ RUN pip install piper-tts
 # Expose Streamlit port
 EXPOSE 8501
 
+# Copy start script
+COPY start.sh .
+RUN chmod +x start.sh
+
 # Healthcheck to verify system dependencies
 HEALTHCHECK CMD ffmpeg -version && espeak-ng --version || exit 1
 
 # Run the application
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["./start.sh"]
