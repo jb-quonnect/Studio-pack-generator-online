@@ -1,7 +1,7 @@
 # Nixpacks configuration for Coolify deployment
 
 [phases.setup]
-nixPkgs = ["...", "espeak-ng"]
+aptPkgs = ["ffmpeg", "espeak-ng"]
 
 [start]
 cmd = "streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
