@@ -446,34 +446,82 @@ def render_zip_upload():
 
 
 def render_rss_input():
-    """Affiche l'interface d'import RSS."""
-    st.markdown("### 📡 Import de Podcast (RSS)")
-    st.markdown("Importez des épisodes de podcast depuis un flux RSS.")
+    """Affiche l'interface d'import RSS avec moteur de recherche unifié."""
+    st.markdown("### 📡 Import de Podcast")
+    st.markdown("Recherchez un podcast ou collez directement l'URL d'un flux RSS.")
     
-    rss_url = st.text_input(
-        "URL du flux RSS",
-        placeholder="https://example.com/podcast/feed.xml",
-        key='rss_url'
-    )
+    # Search/URL Input
+    col_search, col_btn = st.columns([4, 1])
     
-    col1, col2 = st.columns([3, 1])
+    with col_search:
+        search_query = st.text_input(
+            "Recherche / RSS",
+            placeholder="Ex: France Inter, Les Odyssées, ou https://...",
+            key='rss_input',
+            label_visibility="collapsed"
+        )
     
-    with col2:
-        load_rss = st.button("🔄 Charger", use_container_width=True, disabled=not rss_url)
+    with col_btn:
+        search_clicked = st.button("🔎 Rechercher", use_container_width=True)
     
-    if load_rss and rss_url:
-        with st.spinner("Chargement du flux RSS..."):
-            feed = parse_rss_feed(rss_url)
-            if feed:
-                st.session_state.rss_feed = feed
-                st.success(f"✅ {len(feed.episodes)} épisodes trouvés")
+    # Handle Input (Search vs URL)
+    if search_clicked and search_query:
+        # Check if it's a URL
+        from urllib.parse import urlparse
+        parsed = urlparse(search_query)
+        if parsed.scheme in ('http', 'https') and parsed.netloc:
+            # It's a direct URL
+            with st.spinner("Chargement du flux RSS..."):
+                feed = parse_rss_feed(search_query)
+                if feed:
+                    st.session_state.rss_feed = feed
+                    st.success(f"✅ {len(feed.episodes)} épisodes trouvés")
+                    st.rerun() # Force refresh to show episodes
+                else:
+                    st.error("❌ Impossible de charger le flux RSS")
+        else:
+            # It's a search term
+            from modules.podcast_search import unified_search
+            
+            with st.spinner(f"Recherche de '{search_query}'..."):
+                results = unified_search(search_query)
+                
+            if results:
+                st.markdown(f"**{len(results)} résultats trouvés :**")
+                
+                # Display results in a grid
+                cols = st.columns(3)
+                for idx, res in enumerate(results):
+                    with cols[idx % 3]:
+                        with st.container(border=True):
+                            # Image
+                            if res.image_url:
+                                st.image(res.image_url, use_container_width=True)
+                            
+                            # Info
+                            st.markdown(f"**{res.title}**")
+                            st.caption(res.author)
+                            
+                            # Select Button
+                            if st.button("Choisir", key=f"sel_{idx}"):
+                                with st.spinner("Chargement..."):
+                                    feed = parse_rss_feed(res.feed_url)
+                                    if feed:
+                                        st.session_state.rss_feed = feed
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Erreur lors du chargement : {res.feed_url}")
             else:
-                st.error("❌ Impossible de charger le flux RSS")
-    
-    # Display loaded feed
+                st.warning("Aucun podcast trouvé. Essayez une autre recherche ou une URL directe.")
+
+    # Display loaded feed (Common for both Search and Direct URL)
     if st.session_state.get('rss_feed'):
+        # Divider if we have search results above? 
+        # Actually standard flow clears search results on rerun so we are good.
+        
         feed = st.session_state.rss_feed
         
+        st.markdown("---")
         st.markdown(f"### 🎙️ {feed.title}")
         if feed.description:
             st.caption(feed.description[:200] + "..." if len(feed.description) > 200 else feed.description)
