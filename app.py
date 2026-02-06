@@ -18,6 +18,7 @@ import tempfile
 import shutil
 import logging
 import zipfile
+import subprocess
 from pathlib import Path
 
 # Configuration logging
