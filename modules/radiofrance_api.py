@@ -186,7 +186,12 @@ class RadioFranceClient:
                 logger.warning(f"Show info not found in diffusions, fetching separate info for {show_id}")
                 info_resp = requests.get(f"{API_BASE_URL}/shows/{show_id}", headers=HEADERS)
                 if info_resp.ok:
-                    show_info = info_resp.json().get('data', {})
+                    data_fallback = info_resp.json().get('data', {})
+                    # Handle nesting under 'shows' -> {id} -> details
+                    if 'shows' in data_fallback and show_id in data_fallback['shows']:
+                        show_info = data_fallback['shows'][show_id]
+                    else:
+                        show_info = data_fallback
             
             if not show_info:
                 logger.error("Could not fetch show info")

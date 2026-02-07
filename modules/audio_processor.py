@@ -50,7 +50,8 @@ def is_ffmpeg_available() -> bool:
         result = subprocess.run(
             ['ffmpeg', '-version'],
             capture_output=True,
-            text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=10
         )
         return result.returncode == 0
@@ -76,7 +77,7 @@ def get_audio_info(file_path: str) -> Optional[AudioInfo]:
             '-show_entries', 'format=duration:stream=sample_rate,channels,codec_name,bit_rate',
             '-of', 'csv=p=0',
             file_path
-        ], capture_output=True, text=True, timeout=30)
+        ], capture_output=True, encoding='utf-8', errors='replace', timeout=30)
         
         if result.returncode != 0:
             logger.error(f"FFprobe failed for {file_path}: {result.stderr}")
@@ -130,7 +131,7 @@ def analyze_volume(file_path: str) -> float:
             '-vn', '-sn', '-dn',
             '-f', 'null',
             'NUL' if os.name == 'nt' else '/dev/null'
-        ], capture_output=True, text=True, timeout=120)
+        ], capture_output=True, encoding='utf-8', errors='replace', timeout=120)
         
         # Parse max_volume from stderr
         for line in result.stderr.split('\n'):
@@ -221,7 +222,8 @@ def convert_audio(
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=300  # 5 minute timeout
         )
         
@@ -295,7 +297,7 @@ def get_audio_duration(file_path: str) -> float:
             '-show_entries', 'format=duration',
             '-of', 'csv=p=0',
             file_path
-        ], capture_output=True, text=True, timeout=30)
+        ], capture_output=True, encoding='utf-8', errors='replace', timeout=30)
         
         if result.returncode == 0 and result.stdout.strip():
             return float(result.stdout.strip())
