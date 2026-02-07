@@ -157,8 +157,8 @@ def unified_search(query: str) -> List[SearchResult]:
     
     sorted_results = []
     
-    # 1. Add Aerion results (they are already in unique_results, potentially replacing iTunes ones)
-    for r in aerion_results:
+    # 1. Add Radio France results (they are already in unique_results, potentially replacing iTunes ones)
+    for r in rf_results:
         if r.feed_url in unique_results: # Still valid
             sorted_results.append(unique_results[r.feed_url])
             del unique_results[r.feed_url] # Mark processed
