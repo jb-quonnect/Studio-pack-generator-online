@@ -1,0 +1,87 @@
+Device .md: 512 bytes, ver=3
+Packs: 54
+--- Pack 1 (FIRST/REF): UUID=d489f67b-0e51-4669-b1e1-1555f3c18541 REF=F3C18541
+  dir: OK
+  ni: 1348 B
+  li: 72 B
+  ri: 108 B
+  si: 216 B
+  bt: 64 B
+  md: 394 B
+  NI: ver=1 pv=1 off=512 ndsz=44 ndcnt=19 imgs=9 snds=18 fac=0
+  Node0: img=0 aud=0 okP=0 okC=1 okO=0
+  RI hex: 7ed196062a1aebea16cfcb7e6f7edf33c33df3bff5585e037edb2558333d0b2bbc33174aa4a6d955209b9a392067664d
+  RI len: 108
+  BT hex: c634037595c38716bd0fefeacb1c6534 len=64
+  rf/000: 9 files, first=0CD1F8A0
+  sf/000: 18 files, first=03508762
+  md> description: C’est l’heure du dodo, l’heure de se mettre bien au chaud, sous la
+  md>   couette et de plonger dans le pays des rêves avec Paul, Carmen, Yecine, Siam,
+  md>   Robin et Nora.6 histoires douces et poétiques avec des petits exercices de
+  md>   relaxation pour accompagner l’enfant vers le sommeil.
+  md> title: Douce Nuit
+
+--- Pack 52 (RECENT): UUID=ac8e5d51-9877-4a7a-9589-b3a007c26ea8 REF=07C26EA8
+  dir: OK
+  ni: 1172 B
+  li: 56 B
+  ri: 96 B
+  si: 180 B
+  bt: 64 B
+  md: 430 B
+  NI: ver=1 pv=2 off=512 ndsz=44 ndcnt=15 imgs=8 snds=15 fac=1
+  Node0: img=0 aud=0 okP=0 okC=1 okO=0
+  RI hex: 4d127664cbf1506996dfed05ef3dfe964407765a2c21e7d8114837c6c88f5c2687bab9c67e7e490a4e943a5308b3ceb5
+  RI len: 96
+  BT hex: 9fe24fd914cc424c5bc926a1f70b935f len=64
+  rf/000: 8 files, first=00000000
+  sf/000: 15 files, first=00000000
+  md> description: >-
+  md>   LA REINE DES PIRATES
+  md> 
+  md>   Par Claire Richard
+  md> 
+
+--- Pack 53 (RECENT): UUID=ec755e3b-fa85-4230-8d1e-952a08477a72 REF=08477A72
+  dir: OK
+  ni: 5616 B
+  li: 460 B
+  ri: 396 B
+  si: 1392 B
+  bt: 64 B
+  md: 560 B
+  NI: ver=1 pv=2 off=512 ndsz=44 ndcnt=116 imgs=33 snds=116 fac=1
+  Node0: img=0 aud=0 okP=0 okC=1 okO=0
+  RI hex: d2d8982dc620ad0aa9402e7d0227bb6c19c47e4325611cfcd78c78f14bf65d13c85653f6784b634a0a273416e29982dd
+  RI len: 396
+  BT hex: dc6a4929ec3049cadaf62eadd3a11bd1 len=64
+  rf/000: 33 files, first=00000000
+  sf/000: 116 files, first=00000000
+  md> description: "Bonjour London : le premier podcast qui te raconte une histoire
+  md>   tout en t'apprenant l'anglais ! Pars à la rencontre de Summer, 11 ans, qui
+  md>   déménage à Londres avec ses parents la veille de son entrée au collège. Et qui
+  md>   dit nouvelle ville dit nouvelle vie ! Découvre vite son histoire... et
+  md>   apprends l'anglais avec elle. Des mini épisodes t'aideront à progresser
+
+--- Pack 54 (LAST): UUID=b793ca05-63f2-471d-bcbf-d585286726ae REF=286726AE
+  dir: OK
+  ni: 732 B
+  li: 16 B
+  ri: 60 B
+  si: 60 B
+  bt: MISSING
+  md: 124 B
+  NI: ver=1 pv=1 off=512 ndsz=44 ndcnt=5 imgs=5 snds=5 fac=1
+  Node0: img=0 aud=0 okP=0 okC=4 okO=0
+  RI hex: 826246d517d1f51600f96c528e54109777f77cf23d6a341a3bd1ba1f9aad1cf665e63bdb0af4d871417a4caca761cc3d
+  RI len: 60
+  BT: unreadable or missing data
+  rf/000: 5 files, first=00000000
+  sf/000: 5 files, first=00000000
+  md> title: Les Odyssées de Jules Verne
+  md> description: 
+  md> uuid: b793ca05-63f2-471d-bcbf-d585286726ae
+  md> ref: 286726AE
+  md> packType: custom
+
+Orphan dirs: {'840004AA'}

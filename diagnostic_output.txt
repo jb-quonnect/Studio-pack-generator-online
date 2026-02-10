@@ -1,0 +1,29 @@
+﻿python : Traceback (most recent call last):
+Au caractère Ligne:1 : 1
++ python lunii_diagnostic.py D:\ 2>&1 | Out-File 
+-Encoding utf8 diagnos ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback  
+   (most recent call last)::String) [], RemoteExceptio  
+  n
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "I:\Mon Drive\github Projets dev\Studio pack 
+generator online\lunii_diagnostic.py", line 199, in 
+<module>
+    main()
+    ~~~~^^
+  File "I:\Mon Drive\github Projets dev\Studio pack 
+generator online\lunii_diagnostic.py", line 135, in main
+    print(f"\U0001f52c Lunii Diagnostic � 
+{device_root}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jbque\AppData\Local\Python\pythoncore-3
+.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encod
+ing_table)[0]
+           
+~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode 
+character '\U0001f52c' in position 0: character maps to 
+<undefined>

@@ -7,7 +7,7 @@
  * - List installed packs (read .pi + .content/REF/md YAML)
  * - Reorder packs (↑/↓)
  * - Delete packs
- * - Install new packs (copy ZIP content to device)
+ * - Install new packs (copy ZIP content to device + generate BT)
  * 
  * Based on olup/lunii-admin-web architecture.
  */
@@ -20,6 +20,143 @@
     let deviceInfo = null;
     let packs = [];
     let isInstalling = false;
+
+    // ─── XXTEA Encryption ────────────────────────────────────────────────────
+    // Matching reference crypto/xxtea.ts exactly
+
+    const XXTEA_DELTA = 0x9E3779B9;
+
+    const V2_COMMON_KEY = new Uint8Array([
+        0x91, 0xBD, 0x7A, 0x0A, 0xA7, 0x54, 0x40, 0xA9,
+        0xBB, 0xD4, 0x9D, 0x6C, 0xE0, 0xDC, 0xC0, 0xE3
+    ]);
+
+    function toUint32Array(bytes, littleEndian = true) {
+        const length = bytes.length;
+        let n = length >> 2;
+        if ((length & 3) !== 0) n++;
+        const v = new Uint32Array(n);
+
+        if (littleEndian) {
+            for (let i = 0; i < length; i++) {
+                v[i >> 2] |= bytes[i] << ((i & 3) << 3);
+            }
+        } else {
+            for (let i = 0; i < length; i++) {
+                v[i >> 2] |= bytes[length - 1 - i] << ((i & 3) << 3);
+            }
+            v.reverse();
+        }
+        return v;
+    }
+
+    function fromUint32Array(v) {
+        const n = v.length << 2;
+        const bytes = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+            bytes[i] = (v[i >> 2] >> ((i & 3) << 3)) & 0xFF;
+        }
+        return bytes;
+    }
+
+    function xxteaMx(sum, y, z, p, e, k) {
+        return (
+            (((z >>> 5) ^ (y << 2)) + ((y >>> 3) ^ (z << 4))) ^
+            ((sum ^ y) + (k[(p & 3) ^ e] ^ z))
+        );
+    }
+
+    function xxteaEncryptUint32(v, k) {
+        const length = v.length;
+        const n = length - 1;
+        let z = v[n];
+        let sum = 0;
+        const q = Math.floor(1 + 52 / length);
+
+        for (let round = 0; round < q; round++) {
+            sum = (sum + XXTEA_DELTA) >>> 0;
+            const e = (sum >>> 2) & 3;
+            for (let p = 0; p < n; p++) {
+                const y = v[p + 1];
+                const mx = xxteaMx(sum, y, z, p, e, k);
+                v[p] = (v[p] + mx) >>> 0;
+                z = v[p];
+            }
+            const y = v[0];
+            const mx = xxteaMx(sum, y, z, n, e, k);
+            v[n] = (v[n] + mx) >>> 0;
+            z = v[n];
+        }
+        return v;
+    }
+
+    function xxteaDecryptUint32(v, k) {
+        const length = v.length;
+        const n = length - 1;
+        const q = Math.floor(1 + 52 / length);
+        let sum = (q * XXTEA_DELTA) >>> 0;
+        let y = v[0];
+
+        for (let round = 0; round < q; round++) {
+            const e = (sum >>> 2) & 3;
+            for (let p = n; p > 0; p--) {
+                const z = v[p - 1];
+                const mx = xxteaMx(sum, y, z, p, e, k);
+                v[p] = (v[p] - mx) >>> 0;
+                y = v[p];
+            }
+            const z = v[n];
+            const mx = xxteaMx(sum, y, z, 0, e, k);
+            v[0] = (v[0] - mx) >>> 0;
+            y = v[0];
+            sum = (sum - XXTEA_DELTA) >>> 0;
+        }
+        return v;
+    }
+
+    function encryptXxtea(block, key) {
+        if (block.length < 8) return block;
+        const dataInt = toUint32Array(block, true);   // data: LE
+        const keyInt = toUint32Array(key, false);      // key: BE
+        const encrypted = xxteaEncryptUint32(dataInt, keyInt);
+        return fromUint32Array(encrypted);
+    }
+
+    function decryptXxtea(block, key) {
+        if (block.length < 8) return block;
+        const dataInt = toUint32Array(block, true);
+        const keyInt = toUint32Array(key, false);
+        const decrypted = xxteaDecryptUint32(dataInt, keyInt);
+        return fromUint32Array(decrypted);
+    }
+
+    // ─── V2 Key Derivation ──────────────────────────────────────────────────
+
+    function encryptFirstBlock(data, encryptFn, size = 512) {
+        const firstBlockLength = Math.min(size, data.length);
+        const firstBlock = data.subarray(0, firstBlockLength);
+        const encryptedBlock = encryptFn(firstBlock);
+        if (encryptedBlock.length > data.length) return encryptedBlock;
+        const output = new Uint8Array(data);
+        output.set(encryptedBlock);
+        return output;
+    }
+
+    function v2ComputeSpecificKey(uuidBytes) {
+        const decrypted = decryptXxtea(uuidBytes, V2_COMMON_KEY);
+        return new Uint8Array([
+            decrypted[11], decrypted[10], decrypted[9], decrypted[8],
+            decrypted[15], decrypted[14], decrypted[13], decrypted[12],
+            decrypted[3], decrypted[2], decrypted[1], decrypted[0],
+            decrypted[7], decrypted[6], decrypted[5], decrypted[4],
+        ]);
+    }
+
+    function v2GenerateBt(riEncrypted, specificKey) {
+        const firstBlockLength = Math.min(64, riEncrypted.length);
+        const firstBlock = riEncrypted.subarray(0, firstBlockLength);
+        return encryptXxtea(firstBlock, specificKey);
+    }
 
     // ─── UUID Utilities ──────────────────────────────────────────────────────
 
@@ -78,19 +215,6 @@
         await writeFile(current, parts[parts.length - 1], data, true);
     }
 
-    async function copyAll(srcDir, destDir) {
-        for await (const [name, handle] of srcDir.entries()) {
-            if (handle.kind === 'file') {
-                const file = await handle.getFile();
-                const data = await file.arrayBuffer();
-                await writeFile(destDir, name, data, true);
-            } else {
-                const destSubDir = await destDir.getDirectoryHandle(name, { create: true });
-                await copyAll(handle, destSubDir);
-            }
-        }
-    }
-
     // ─── Simple YAML Parser (for pack metadata) ─────────────────────────────
 
     function parseSimpleYaml(text) {
@@ -122,10 +246,18 @@
         const highBits = view.getInt32(10, false);
         const lowBits = view.getInt32(14, false);
         const serialRaw = (BigInt(highBits) << 32n) + BigInt(lowBits);
+
+        // Extract UUID bytes (offset 256, 256 bytes) for specific key computation
+        // Reference: const uuid = new Uint8Array(mdFile.slice(256, 256 + 256));
+        const uuidBytes = mdBytes.slice(256, 256 + 256);
+        const specificKey = v2ComputeSpecificKey(uuidBytes);
+
         return {
             version: 'V2',
             firmwareVersion: `${fwMajor}.${fwMinor}`,
-            serialNumber: serialRaw.toString().padStart(14, '0')
+            serialNumber: serialRaw.toString().padStart(14, '0'),
+            uuidBytes: uuidBytes,
+            specificKey: specificKey
         };
     }
 
@@ -273,8 +405,11 @@
             const zip = await JSZip.loadAsync(file);
             const entries = Object.keys(zip.files).filter(e => !zip.files[e].dir);
 
+            // Normalize path separators (Windows ZIPs may use backslashes)
+            const normalizedEntries = entries.map(e => e.replace(/\\/g, '/'));
+
             // Find the .content directory structure in the ZIP
-            const contentEntries = entries.filter(e => e.includes('.content/'));
+            const contentEntries = normalizedEntries.filter(e => e.includes('.content/'));
 
             if (contentEntries.length === 0) {
                 throw new Error('ZIP invalide: pas de dossier .content/ trouvé');
@@ -293,7 +428,9 @@
             let packTitle = 'Pack installé';
 
             if (mdEntry) {
-                const mdText = await zip.files[mdEntry].async('text');
+                // Use original entry name from ZIP (might have backslashes)
+                const origEntry = entries[normalizedEntries.indexOf(mdEntry)];
+                const mdText = await zip.files[origEntry].async('text');
                 const metadata = parseSimpleYaml(mdText);
                 packUuid = metadata.uuid;
                 packTitle = metadata.title || packTitle;
@@ -306,16 +443,50 @@
             const packDir = await contentDir.getDirectoryHandle(packRef, { create: true });
 
             let count = 0;
-            for (const entry of contentEntries) {
-                const relativePath = entry.replace(`.content/${packRef}/`, '');
+            let riData = null;
+
+            for (let idx = 0; idx < contentEntries.length; idx++) {
+                const entry = contentEntries[idx];
+                const origEntry = entries[normalizedEntries.indexOf(entry)];
+                const relativePath = entry.split(`${packRef}/`).slice(1).join(`${packRef}/`);
                 if (!relativePath) continue;
 
-                const data = await zip.files[entry].async('arraybuffer');
+                // Skip BT from ZIP — we'll generate it ourselves
+                if (relativePath === 'bt') {
+                    count++;
+                    continue;
+                }
+
+                const data = await zip.files[origEntry].async('arraybuffer');
+
+                // Capture the RI data for BT generation
+                if (relativePath === 'ri') {
+                    riData = new Uint8Array(data);
+                }
+
                 await writeFileAtPath(packDir, relativePath, data);
 
                 count++;
                 const pct = Math.round(count / contentEntries.length * 100);
                 updateInstallStatus(`Copie ${count}/${contentEntries.length} (${pct}%)...`);
+            }
+
+            // Generate BT file on-device for V2
+            updateInstallStatus('Génération du BT...');
+            if (deviceInfo.version === 'V2' && riData) {
+                const encryptV2 = (block) => encryptXxtea(block, V2_COMMON_KEY);
+                const btBinary = v2GenerateBt(riData, deviceInfo.specificKey);
+                await writeFile(packDir, 'bt', btBinary, true);
+                console.log('BT generated:', btBinary.length, 'bytes');
+            } else if (deviceInfo.version === 'V3') {
+                // V3: read existing bt from device and copy it
+                try {
+                    const deviceBtHandle = await deviceHandle.getFileHandle('.bt');
+                    const deviceBt = await readFileAsBytes(deviceBtHandle);
+                    await writeFile(packDir, 'bt', deviceBt, true);
+                } catch (e) {
+                    console.warn('V3 BT not found, skipping:', e);
+                }
             }
 
             // Add UUID to pack index
@@ -331,6 +502,7 @@
             await refreshPacks();
 
         } catch (e) {
+            console.error('Install error:', e);
             showNotification(`Erreur: ${e.message}`, true);
         } finally {
             isInstalling = false;
@@ -491,7 +663,6 @@
     }
 
     function toggleMenu(index) {
-        // Close all other menus
         document.querySelectorAll('.lm-menu').forEach(m => { m.style.display = 'none'; });
         const menu = document.getElementById(`lm-menu-${index}`);
         if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
@@ -499,7 +670,7 @@
 
     function showDetails(index) {
         const pack = packs[index];
-        toggleMenu(index); // close menu
+        toggleMenu(index);
         alert(
             `🎧 Détails du pack\n\n` +
             `Titre: ${pack.title}\n` +
