@@ -346,7 +346,7 @@ def generate_ni(stage_nodes: List[Dict], action_nodes: List[Dict],
         stage_uuid_to_idx[node['uuid']] = i
     
     # Header (25 bytes packed, padded to 512)
-    header = struct.pack('<HHiiiib',
+    header = struct.pack('<HHiiiiib',
         NI_VERSION,           # Version
         NI_STORY_VERSION,     # Story version
         NI_HEADER_SIZE,       # Offset to first node
