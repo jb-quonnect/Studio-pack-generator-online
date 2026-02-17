@@ -1,0 +1,6 @@
+Header: pv=1 nodes=5 fac=1
+  N0: img=0 aud=0 okP=0 okC=4 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N1: img=1 aud=1 okP=-1 okC=-1 okO=-1 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N2: img=2 aud=2 okP=-1 okC=-1 okO=-1 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N3: img=3 aud=3 okP=-1 okC=-1 okO=-1 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N4: img=4 aud=4 okP=-1 okC=-1 okO=-1 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0

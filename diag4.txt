@@ -1,0 +1,66 @@
+Device UUID bytes[0:16]: 9899205eed617b778dc7de13601fac00
+Decrypted UUID[0:16]: 3239373135315108004a0041f0112233
+Specific key: 41004a00332211f03137393208513135
+Our pack REF: C40A28B5 exists: True
+
+=== BT VERIFICATION ===
+BT size: 64
+RI size: 60
+BT hex: 8855173b26e6b1307e369fa4c50461cf3f55e0c14fa8647268d21956dca2859b2d8d7906a08895948586947348568566b789d31ca25a805ecbd443cf98c431d3
+RI first 64 hex: 826246d517d1f51600f96c528e54109777f77cf23d6a341a3bd1ba1f9aad1cf665e63bdb0af4d871417a4caca761cc3d05a4b98601e2717656b35907
+BT decrypted hex: 826246d517d1f51600f96c528e54109777f77cf23d6a341a3bd1ba1f9aad1cf665e63bdb0af4d871417a4caca761cc3d05a4b98601e2717656b3590700000000
+RI padded 64 hex: 826246d517d1f51600f96c528e54109777f77cf23d6a341a3bd1ba1f9aad1cf665e63bdb0af4d871417a4caca761cc3d05a4b98601e2717656b3590700000000
+BT_dec == RI_first64: True
+Expected BT hex: 8855173b26e6b1307e369fa4c50461cf3f55e0c14fa8647268d21956dca2859b2d8d7906a08895948586947348568566b789d31ca25a805ecbd443cf98c431d3
+BT matches expected: True
+
+=== WORKING PACK 52 BT VERIFICATION ===
+BT52 size: 64
+RI52 size: 96
+BT52 dec hex: 4d127664cbf1506996dfed05ef3dfe964407765a2c21e7d8114837c6c88f5c2687bab9c67e7e490a4e943a5308b3ceb509a85d539ec082cfde9b9768ca432fcd
+RI52 first 64: 4d127664cbf1506996dfed05ef3dfe964407765a2c21e7d8114837c6c88f5c2687bab9c67e7e490a4e943a5308b3ceb509a85d539ec082cfde9b9768ca432fcd
+BT52_dec == RI52_first64: True
+
+=== WORKING PACK 52 - ALL NODES ===
+Node count: 15
+  N0: img=0 aud=0 okP=0 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=0 pse=0 auto=0 pad=0
+  N1: img=1 aud=1 okP=1 okC=6 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=0 ok=0 hm=1 pse=0 auto=1 pad=0
+  N2: img=2 aud=2 okP=7 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N3: img=-1 aud=3 okP=13 okC=1 okO=0 hmP=1 hmC=6 hmO=5 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N4: img=3 aud=4 okP=8 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N5: img=-1 aud=5 okP=7 okC=1 okO=0 hmP=1 hmC=6 hmO=4 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N6: img=4 aud=6 okP=9 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N7: img=-1 aud=7 okP=8 okC=1 okO=0 hmP=1 hmC=6 hmO=3 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N8: img=5 aud=8 okP=10 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N9: img=-1 aud=9 okP=9 okC=1 okO=0 hmP=1 hmC=6 hmO=2 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N10: img=6 aud=10 okP=11 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N11: img=-1 aud=11 okP=10 okC=1 okO=0 hmP=1 hmC=6 hmO=1 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N12: img=7 aud=12 okP=12 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N13: img=-1 aud=13 okP=11 okC=1 okO=0 hmP=1 hmC=6 hmO=0 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N14: img=-1 aud=14 okP=0 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=0 ok=0 hm=1 pse=0 auto=1 pad=0
+
+=== OUR PACK - ALL NODES ===
+Header: pv=1 nodes=5 imgs=5 snds=5 fac=1
+  N0: img=0 aud=0 okP=0 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=0 pse=0 auto=0 pad=0
+  N1: img=1 aud=1 okP=1 okC=6 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=0 ok=0 hm=1 pse=0 auto=1 pad=0
+  N2: img=2 aud=2 okP=7 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+  N3: img=-1 aud=3 okP=13 okC=1 okO=0 hmP=1 hmC=6 hmO=5 whl=0 ok=0 hm=1 pse=1 auto=1 pad=0
+  N4: img=3 aud=4 okP=8 okC=1 okO=0 hmP=-1 hmC=-1 hmO=-1 whl=1 ok=1 hm=1 pse=0 auto=0 pad=0
+
+=== OUR LI DECRYPTED ===
+  li[0] = 1
+  li[1] = 2
+  li[2] = 3
+  li[3] = 4
+
+=== PACK 52 LI DECRYPTED ===
+  li[0] = 1
+  li[1] = 12
+  li[2] = 10
+  li[3] = 8
+  li[4] = 6
+  li[5] = 4
+  li[6] = 2
+  li[7] = 3
+  li[8] = 5
+  li[9] = 7

@@ -1,11 +1,33 @@
+"""Comprehensive diagnostic: BT integrity + NI node structure comparison."""
 import os, struct, sys
 sys.path.insert(0, '.')
-from modules.lunii_converter import xxtea_decrypt
+from modules.lunii_converter import xxtea_decrypt, xxtea_encrypt, XXTEA_KEY_V2
 
 out = []
 def p(s): out.append(str(s))
 
 device = 'D:\\'
+
+# ─── Device UUID and Specific Key ───
+md_data = open(os.path.join(device, '.md'), 'rb').read()
+uuid_bytes = md_data[256:512]  # 256 bytes
+p('Device UUID bytes[0:16]: ' + uuid_bytes[:16].hex())
+
+# Compute specific key (same as JS v2ComputeSpecificKey)
+# Step 1: XXTEA decrypt the full 256-byte UUID with common key
+dec_uuid = xxtea_decrypt(uuid_bytes)
+p('Decrypted UUID[0:16]: ' + dec_uuid[:16].hex())
+
+# Step 2: Reorder bytes [11,10,9,8, 15,14,13,12, 3,2,1,0, 7,6,5,4]
+specific_key = bytes([
+    dec_uuid[11], dec_uuid[10], dec_uuid[9], dec_uuid[8],
+    dec_uuid[15], dec_uuid[14], dec_uuid[13], dec_uuid[12],
+    dec_uuid[3], dec_uuid[2], dec_uuid[1], dec_uuid[0],
+    dec_uuid[7], dec_uuid[6], dec_uuid[5], dec_uuid[4],
+])
+p('Specific key: ' + specific_key.hex())
+
+# ─── Find our pack ───
 pi = open(os.path.join(device, '.pi'), 'rb').read()
 uuids = []
 for i in range(0, len(pi), 16):
@@ -15,104 +37,95 @@ for i in range(0, len(pi), 16):
 last_hex = uuids[-1]
 ref = last_hex[-8:].upper()
 base = os.path.join(device, '.content', ref)
-p('Last pack REF: ' + ref)
-p('Dir exists: ' + str(os.path.exists(base)))
+p('Our pack REF: ' + ref + ' exists: ' + str(os.path.exists(base)))
 
-if not os.path.exists(base):
-    p('Pack not found!')
-    with open('diag3.txt','w') as f: f.write('\n'.join(out))
-    print('Done'); exit()
+# ─── BT Verification ───
+p('')
+p('=== BT VERIFICATION ===')
+bt = open(os.path.join(base, 'bt'), 'rb').read()
+ri_enc = open(os.path.join(base, 'ri'), 'rb').read()
+p('BT size: ' + str(len(bt)))
+p('RI size: ' + str(len(ri_enc)))
+p('BT hex: ' + bt.hex())
+p('RI first 64 hex: ' + ri_enc[:64].hex())
 
-# BT size check
-bt_path = os.path.join(base, 'bt')
-try:
-    bt = open(bt_path, 'rb').read()
-    p('BT: ' + str(len(bt)) + 'B hex=' + bt[:16].hex())
-except Exception as e:
-    p('BT error: ' + str(e))
+# Decrypt BT with specific key → should equal first 64 bytes of encrypted RI
+bt_decrypted = xxtea_decrypt(bt, specific_key)
+p('BT decrypted hex: ' + bt_decrypted.hex())
 
-# Compare our NI bytes 0-24 with working pack 52
+# Padded RI first 64 (pad with zeros if shorter)
+ri_padded = ri_enc[:64] + b'\x00' * max(0, 64 - len(ri_enc))
+p('RI padded 64 hex: ' + ri_padded.hex())
+p('BT_dec == RI_first64: ' + str(bt_decrypted[:64] == ri_padded[:64]))
+
+# Now verify using encrypt: BT should = encrypt(RI_first64, specific_key)
+expected_bt = xxtea_encrypt(ri_padded, specific_key)
+p('Expected BT hex: ' + expected_bt.hex())
+p('BT matches expected: ' + str(bt == expected_bt))
+
+# ─── Verify working pack 52 BT ───
+p('')
+p('=== WORKING PACK 52 BT VERIFICATION ===')
+ref52 = '07C26EA8'
+base52 = os.path.join(device, '.content', ref52)
+bt52 = open(os.path.join(base52, 'bt'), 'rb').read()
+ri52_enc = open(os.path.join(base52, 'ri'), 'rb').read()
+p('BT52 size: ' + str(len(bt52)))
+p('RI52 size: ' + str(len(ri52_enc)))
+bt52_dec = xxtea_decrypt(bt52, specific_key)
+p('BT52 dec hex: ' + bt52_dec.hex())
+p('RI52 first 64: ' + ri52_enc[:64].hex())
+p('BT52_dec == RI52_first64: ' + str(bt52_dec[:64] == ri52_enc[:64]))
+
+# ─── Full NI dump for Pack 52 ───
+p('')
+p('=== WORKING PACK 52 - ALL NODES ===')
+ni52 = open(os.path.join(base52, 'ni'), 'rb').read()
+nc52 = struct.unpack_from('<i', ni52, 12)[0]
+p('Node count: ' + str(nc52))
+for idx in range(nc52):
+    o = 512 + idx*44
+    vals = struct.unpack_from('<iiiiiiiihhhhhh', ni52, o)
+    p('  N' + str(idx) + ': img=' + str(vals[0]) + ' aud=' + str(vals[1])
+      + ' okP=' + str(vals[2]) + ' okC=' + str(vals[3]) + ' okO=' + str(vals[4])
+      + ' hmP=' + str(vals[5]) + ' hmC=' + str(vals[6]) + ' hmO=' + str(vals[7])
+      + ' whl=' + str(vals[8]) + ' ok=' + str(vals[9]) + ' hm=' + str(vals[10])
+      + ' pse=' + str(vals[11]) + ' auto=' + str(vals[12]) + ' pad=' + str(vals[13]))
+
+# ─── Full NI dump for our pack ───
+p('')
+p('=== OUR PACK - ALL NODES ===')
 ni = open(os.path.join(base, 'ni'), 'rb').read()
-ni52 = open(os.path.join(device, '.content', '07C26EA8', 'ni'), 'rb').read()
-p('')
-p('=== NI Header comparison (first 25 bytes) ===')
-p('Ours hex: ' + ni[:25].hex())
-p('P52  hex: ' + ni52[:25].hex())
-
-# Compare first node
-p('')
-p('=== First Node comparison (bytes 512-556) ===')
-p('Ours hex: ' + ni[512:556].hex())
-p('P52  hex: ' + ni52[512:556].hex())
-
-# Check all our nodes
 nc = struct.unpack_from('<i', ni, 12)[0]
-p('')
-p('=== All our nodes ===')
+ic = struct.unpack_from('<i', ni, 16)[0]
+sc = struct.unpack_from('<i', ni, 20)[0]
+pv = struct.unpack_from('<h', ni, 2)[0]
+fac = ni[24]
+p('Header: pv=' + str(pv) + ' nodes=' + str(nc) + ' imgs=' + str(ic) + ' snds=' + str(sc) + ' fac=' + str(fac))
 for idx in range(nc):
     o = 512 + idx*44
-    p('Node' + str(idx) + ': ' + ni[o:o+44].hex())
+    vals = struct.unpack_from('<iiiiiiiihhhhhh', ni52, o)
+    p('  N' + str(idx) + ': img=' + str(vals[0]) + ' aud=' + str(vals[1])
+      + ' okP=' + str(vals[2]) + ' okC=' + str(vals[3]) + ' okO=' + str(vals[4])
+      + ' hmP=' + str(vals[5]) + ' hmC=' + str(vals[6]) + ' hmO=' + str(vals[7])
+      + ' whl=' + str(vals[8]) + ' ok=' + str(vals[9]) + ' hm=' + str(vals[10])
+      + ' pse=' + str(vals[11]) + ' auto=' + str(vals[12]) + ' pad=' + str(vals[13]))
 
-# Check image[0] BMP header details after decryption
-rf_dir = os.path.join(base, 'rf', '000')
-rf_files = sorted(os.listdir(rf_dir))
-if rf_files:
-    im0 = open(os.path.join(rf_dir, rf_files[0]), 'rb').read()
-    dec = xxtea_decrypt(im0[:min(512, len(im0))])
-    rest = im0[512:]
-    full = dec + rest
-    # BMP header
-    sig = full[:2].decode('ascii','replace')
-    fsize = struct.unpack_from('<I', full, 2)[0]
-    offset = struct.unpack_from('<I', full, 10)[0]
-    w = struct.unpack_from('<i', full, 18)[0]
-    h = struct.unpack_from('<i', full, 22)[0]
-    bpp = struct.unpack_from('<H', full, 28)[0]
-    comp = struct.unpack_from('<I', full, 30)[0]
-    p('')
-    p('=== Image[0] BMP header ===')
-    p('sig=' + sig + ' fsize=' + str(fsize) + ' offset=' + str(offset))
-    p('w=' + str(w) + ' h=' + str(h) + ' bpp=' + str(bpp) + ' comp=' + str(comp))
-    p('file size actual: ' + str(len(im0)))
+# LI dump
+p('')
+p('=== OUR LI DECRYPTED ===')
+li = open(os.path.join(base, 'li'), 'rb').read()
+dec_li = xxtea_decrypt(li[:min(512,len(li))])
+for i in range(0, len(dec_li), 4):
+    p('  li[' + str(i//4) + '] = ' + str(struct.unpack_from('<I', dec_li, i)[0]))
 
-# Check working pack image for comparison
-rf52 = os.path.join(device, '.content', '07C26EA8', 'rf', '000')
-rf52_files = sorted(os.listdir(rf52))
-if rf52_files:
-    im52 = open(os.path.join(rf52, rf52_files[0]), 'rb').read()
-    dec52 = xxtea_decrypt(im52[:min(512, len(im52))])
-    rest52 = im52[512:]
-    full52 = dec52 + rest52
-    sig52 = full52[:2].decode('ascii','replace')
-    fsize52 = struct.unpack_from('<I', full52, 2)[0]
-    offset52 = struct.unpack_from('<I', full52, 10)[0]
-    w52 = struct.unpack_from('<i', full52, 18)[0]
-    h52 = struct.unpack_from('<i', full52, 22)[0]
-    bpp52 = struct.unpack_from('<H', full52, 28)[0]
-    comp52 = struct.unpack_from('<I', full52, 30)[0]
-    p('')
-    p('=== Working pack Image[0] BMP header ===')
-    p('sig=' + sig52 + ' fsize=' + str(fsize52) + ' offset=' + str(offset52))
-    p('w=' + str(w52) + ' h=' + str(h52) + ' bpp=' + str(bpp52) + ' comp=' + str(comp52))
-    p('file size actual: ' + str(len(im52)))
+p('')
+p('=== PACK 52 LI DECRYPTED ===')
+li52 = open(os.path.join(base52, 'li'), 'rb').read()
+dec_li52 = xxtea_decrypt(li52[:min(512,len(li52))])
+for i in range(0, min(40, len(dec_li52)), 4):
+    p('  li[' + str(i//4) + '] = ' + str(struct.unpack_from('<I', dec_li52, i)[0]))
 
-# Check audio[0] MP3 frame header
-sf_dir = os.path.join(base, 'sf', '000')
-sf_files = sorted(os.listdir(sf_dir))
-if sf_files:
-    a0 = open(os.path.join(sf_dir, sf_files[0]), 'rb').read()
-    dec_a = xxtea_decrypt(a0[:min(512, len(a0))])
-    p('')
-    p('=== Audio[0] first 16 bytes ===')
-    p('Our: ' + dec_a[:16].hex())
-
-sf52 = os.path.join(device, '.content', '07C26EA8', 'sf', '000')
-sf52_files = sorted(os.listdir(sf52))
-if sf52_files:
-    a52 = open(os.path.join(sf52, sf52_files[0]), 'rb').read()
-    dec_a52 = xxtea_decrypt(a52[:min(512, len(a52))])
-    p('P52: ' + dec_a52[:16].hex())
-
-with open('diag3.txt', 'w', encoding='utf-8') as f:
+with open('diag4.txt', 'w', encoding='utf-8') as f:
     f.write('\n'.join(out))
-print('Done')
+print('Done - see diag4.txt')

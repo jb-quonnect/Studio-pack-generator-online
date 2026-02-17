@@ -343,13 +343,19 @@ def convert_image_to_lunii_bmp(image_path: str) -> bytes:
 
 
 def convert_audio_to_lunii_mp3(audio_path: str, output_path: str) -> bool:
-    """Convert audio to Lunii-compatible MP3: 44100Hz, Mono, 64kbps, no ID3."""
+    """Convert audio to Lunii-compatible MP3: 44100Hz, Mono, 128kbps, no ID3.
+    Prepends 1 second of silence to compensate for Lunii firmware audio truncation."""
     try:
         result = subprocess.run([
-            'ffmpeg', '-y', '-i', audio_path,
+            'ffmpeg', '-y',
+            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono',  # silence source
+            '-i', audio_path,                                    # actual audio
+            '-filter_complex',
+            '[0:a]atrim=duration=1[silence];[silence][1:a]concat=n=2:v=0:a=1[out]',
+            '-map', '[out]',
             '-ar', '44100',
             '-ac', '1',
-            '-b:a', '64k',
+            '-b:a', '128k',
             '-map_metadata', '-1',
             '-id3v2_version', '0',
             '-write_id3v1', '0',
@@ -480,13 +486,32 @@ def generate_ni(stage_nodes: List[Dict], action_nodes: List[Dict],
             struct.pack_into('<i', node_buf, 24, -1)
             struct.pack_into('<i', node_buf, 28, -1)
 
-        # Control settings
-        ctrl = node.get('controlSettings', {})
-        struct.pack_into('<h', node_buf, 32, 1 if ctrl.get('wheel', True) else 0)
-        struct.pack_into('<h', node_buf, 34, 1 if ctrl.get('ok', True) else 0)
-        struct.pack_into('<h', node_buf, 36, 1 if ctrl.get('home', True) else 0)
-        struct.pack_into('<h', node_buf, 38, 1 if ctrl.get('pause', False) else 0)
-        struct.pack_into('<h', node_buf, 40, 1 if ctrl.get('autoplay', False) else 0)
+        # Control flags — computed from node transitions to match firmware expectations
+        # Reference: olup/lunii-admin-web ni.ts
+        has_ok = ok_data is not None and ok_data.get('actionNode') and list_node_by_id.get(ok_data.get('actionNode', ''))
+        has_home = home_data is not None and home_data.get('actionNode') and list_node_by_id.get(home_data.get('actionNode', ''))
+        is_story_node = not has_ok  # Terminal node = story content, no further navigation
+
+        if is_story_node:
+            # Story/content node: autoplay audio, pause enabled, no wheel/ok
+            wheel_enabled = 0
+            ok_enabled = 0
+            home_enabled = 1 if has_home else 1  # Always enable home on story nodes
+            pause_enabled = 1
+            autoplay_enabled = 1
+        else:
+            # Menu/navigation node: wheel+ok for selection, no autoplay
+            wheel_enabled = 1
+            ok_enabled = 1
+            home_enabled = 1 if has_home else 0
+            pause_enabled = 0
+            autoplay_enabled = 0
+
+        struct.pack_into('<h', node_buf, 32, wheel_enabled)
+        struct.pack_into('<h', node_buf, 34, ok_enabled)
+        struct.pack_into('<h', node_buf, 36, home_enabled)
+        struct.pack_into('<h', node_buf, 38, pause_enabled)
+        struct.pack_into('<h', node_buf, 40, autoplay_enabled)
         struct.pack_into('<h', node_buf, 42, 0)  # padding
 
         nodes_data.extend(node_buf)
