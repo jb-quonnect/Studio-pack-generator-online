@@ -41,6 +41,7 @@ class StageNode:
     audio: Optional[str] = None  # Navigation audio (announcement)
     story_audio: Optional[str] = None  # Story audio (for story nodes only)
     ok_transition: Optional[str] = None  # ActionNode ID for OK button
+    ok_option_index: Optional[int] = None  # Option index (-1=wheel, >=0=auto-select)
     home_transition: Optional[str] = None  # ActionNode ID for home
     control_settings: Optional[Dict] = None
     
@@ -59,7 +60,10 @@ class StageNode:
         if self.story_audio:
             result["storyAudio"] = self.story_audio
         if self.ok_transition:
-            result["okTransition"] = {"actionNode": self.ok_transition}
+            ok_trans = {"actionNode": self.ok_transition}
+            if self.ok_option_index is not None:
+                ok_trans["optionIndex"] = self.ok_option_index
+            result["okTransition"] = ok_trans
         if self.home_transition:
             result["homeTransition"] = {"actionNode": self.home_transition}
         if self.control_settings:
@@ -96,7 +100,7 @@ class StoryPack:
     title: str = "Mon Pack"
     description: str = ""
     format: str = "v1"
-    version: int = 1
+    version: int = 2
     night_mode: bool = False
     
     stage_nodes: List[StageNode] = field(default_factory=list)
@@ -358,11 +362,14 @@ def load_story_pack(json_path: str) -> Optional[StoryPack]:
                 name=node_data.get('name', ''),
                 image=node_data.get('image'),
                 audio=node_data.get('audio'),
-                story_audio=node_data.get('storyAudio')
+                story_audio=node_data.get('storyAudio'),
+                control_settings=node_data.get('controlSettings')
             )
             
             if 'okTransition' in node_data:
                 node.ok_transition = node_data['okTransition'].get('actionNode')
+                if 'optionIndex' in node_data['okTransition']:
+                    node.ok_option_index = node_data['okTransition']['optionIndex']
             if 'homeTransition' in node_data:
                 node.home_transition = node_data['homeTransition'].get('actionNode')
             

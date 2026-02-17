@@ -333,6 +333,9 @@ class PackBuilder:
         """
         Build the story.json structure from the tree.
         
+        Creates the node graph:
+          Entrypoint (cover) → "Choisis une histoire" (auto) → Story menu (wheel)
+        
         Args:
             root: Root tree node
             
@@ -346,14 +349,51 @@ class PackBuilder:
             audio=f"assets/{root.nav_audio_asset}" if root.nav_audio_asset else None
         )
         
-        # If root has children, create action node and link
+        # If root has children, create the "Choisis une histoire" intermediate node
         if root.children:
-            action = self.story_gen.create_action()
-            self.story_gen.link_node_to_action(entrypoint, action)
+            # Generate TTS for "Choisis une histoire"
+            choose_audio_asset = None
+            if self.options.generate_missing_audio:
+                temp_audio = os.path.join(
+                    self.session.input_dir, f"_tts_choose_{generate_uuid()}.mp3"
+                )
+                if synthesize_navigation_audio(
+                    "Choisis une histoire", temp_audio, self.options.tts_model
+                ):
+                    from .audio_processor import process_audio_to_asset
+                    choose_audio_asset = process_audio_to_asset(
+                        temp_audio, self.session.assets_dir, normalize=True
+                    )
+                    if choose_audio_asset:
+                        self._increment_file_count()
+                    if os.path.exists(temp_audio):
+                        os.remove(temp_audio)
             
-            # Process children
+            # Create "Choisis une histoire" intermediate node
+            choose_node = self.story_gen.create_menu(
+                name="Choisis une histoire",
+                audio=f"assets/{choose_audio_asset}" if choose_audio_asset else None,
+            )
+            # Auto-play + auto-transition (no wheel/ok on this node)
+            choose_node.control_settings = {
+                'wheel': False, 'ok': False, 'home': True,
+                'pause': False, 'autoplay': True
+            }
+            
+            # Entrypoint → action1 (1 option: choose_node)
+            action_entry = self.story_gen.create_action([choose_node.uuid])
+            self.story_gen.link_node_to_action(entrypoint, action_entry)
+            # optionIndex=0 → auto-jump to the single option (choose_node)
+            entrypoint.ok_option_index = 0
+            
+            # Choose node → action2 (N options: story children) with optionIndex=-1 (wheel)
+            action_menu = self.story_gen.create_action()
+            self.story_gen.link_node_to_action(choose_node, action_menu)
+            choose_node.ok_option_index = -1  # Wheel scroll mode for story selection
+            
+            # Process children into the menu action
             for child in root.children:
-                self._build_node(child, action)
+                self._build_node(child, action_menu)
         
         return True
     

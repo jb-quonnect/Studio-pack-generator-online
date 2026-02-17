@@ -6,6 +6,7 @@ Allows users to:
 - Navigate through menus with Left/Right/OK buttons
 - Preview images and play audio
 - Verify the pack structure is correct
+- See auto-transition behavior matching real Lunii firmware
 """
 
 import streamlit as st
@@ -104,6 +105,7 @@ def get_current_options(pack: StoryPack, node: StageNode) -> List[StageNode]:
 def render_simulator(state: SimulatorState) -> None:
     """
     Render the navigation simulator UI.
+    Accurately reflects the Lunii device behavior.
     
     Args:
         state: Current simulator state
@@ -120,17 +122,29 @@ def render_simulator(state: SimulatorState) -> None:
     # Get options for current node
     options = get_current_options(state.pack, current_node)
     
+    # Check node control settings
+    ctrl = current_node.control_settings or {}
+    is_auto = ctrl.get('autoplay', False) if isinstance(ctrl, dict) else False
+    has_wheel = ctrl.get('wheel', False) if isinstance(ctrl, dict) else False
+    
     # Breadcrumb navigation path
     st.markdown("---")
-    breadcrumb = " > ".join(state.navigation_path)
-    st.markdown(f"**📍 Chemin:** {breadcrumb}")
+    breadcrumb = " → ".join(state.navigation_path)
+    st.markdown(f"**📍 Navigation:** {breadcrumb}")
+    
+    # Node type indicator
+    if is_auto and options:
+        st.info("⏩ **Transition automatique** — Ce nœud joue son audio puis avance automatiquement")
+    elif current_node.type == 'story':
+        st.success("📖 **Lecture d'histoire** — Pause ⏸️ et Home 🏠 disponibles")
+    elif has_wheel and options:
+        st.markdown("🎡 **Menu de sélection** — Utilisez la molette (◀️ ▶️) pour naviguer, OK pour valider")
     st.markdown("---")
     
     # Main display area
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Current node info
         st.markdown(f"### {current_node.name}")
         st.caption(f"Type: {current_node.type}")
         
@@ -138,92 +152,108 @@ def render_simulator(state: SimulatorState) -> None:
         if current_node.image:
             image_path = os.path.join(state.assets_dir, os.path.basename(current_node.image))
             if os.path.exists(image_path):
-                st.image(image_path, width=320, caption="Image actuelle")
+                st.image(image_path, width=320, caption="Écran Lunii")
             else:
                 st.info("🖼️ Image non disponible")
         else:
-            st.info("🖼️ Pas d'image définie")
+            if current_node.type != 'story':
+                st.info("🖼️ Pas d'image (nœud intermédiaire)")
     
     with col2:
-        # Audio controls
-        st.markdown("#### 🔊 Audio de navigation")
+        st.markdown("#### 🔊 Audio")
         
-        # Navigation audio
         if current_node.audio:
             audio_path = os.path.join(state.assets_dir, os.path.basename(current_node.audio))
             if os.path.exists(audio_path):
                 st.audio(audio_path, format='audio/mp3')
-                st.caption(f"🎙️ Annonce: «{current_node.name}»")
+                if current_node.type == 'story' and current_node.story_audio:
+                    st.caption("🎙️ Annonce de navigation")
+                else:
+                    st.caption(f"🎙️ «{current_node.name}»")
             else:
-                st.warning(f"⚠️ Fichier audio introuvable: {os.path.basename(current_node.audio)}")
+                st.warning("⚠️ Fichier audio introuvable")
         else:
-            st.info("🔇 Pas d'audio de navigation")
+            st.info("🔇 Pas d'audio")
+        
+        # Story audio (separate from navigation audio)
+        if current_node.type == 'story' and current_node.story_audio:
+            story_audio_path = os.path.join(state.assets_dir, os.path.basename(current_node.story_audio))
+            if os.path.exists(story_audio_path):
+                st.markdown("#### 🎧 Histoire complète")
+                st.audio(story_audio_path, format='audio/mp3')
     
-    # Options display
+    # Auto-transition: show skip button instead of normal navigation
+    if is_auto and options:
+        st.markdown("---")
+        st.markdown("### ⏩ Transition automatique")
+        st.caption("Sur l'appareil, le firmware enchaîne automatiquement après la lecture audio.")
+        
+        # Determine target
+        option_index = current_node.ok_option_index if current_node.ok_option_index is not None else 0
+        if option_index == -1:
+            target = options[0] if options else None
+            st.markdown(f"➡️ Vers le menu de sélection ({len(options)} options)")
+        elif 0 <= option_index < len(options):
+            target = options[option_index]
+            st.markdown(f"➡️ Vers: **{target.name}**")
+        else:
+            target = options[0] if options else None
+        
+        if st.button("⏩ Simuler la transition automatique", use_container_width=True):
+            if target:
+                state.current_node_uuid = target.uuid
+                state.current_option_index = 0
+                state.navigation_path.append(target.name)
+                st.rerun()
+        return  # Don't show normal navigation for auto nodes
+    
+    # Options display (wheel mode)
     if options:
         st.markdown("---")
         
-        # Ensure index is valid
         if state.current_option_index >= len(options):
             state.current_option_index = 0
         
         selected = options[state.current_option_index]
         
-        # PROMINENT: Selected option audio at the top
-        st.markdown(f"### 🎯 Élément sélectionné: **{selected.name}**")
+        st.markdown(f"### 🎯 Sélection: **{selected.name}**")
         
         col_preview, col_list = st.columns([1, 1])
         
         with col_preview:
-            # Image and audio of selected item
             if selected.image:
                 img_path = os.path.join(state.assets_dir, os.path.basename(selected.image))
                 if os.path.exists(img_path):
                     st.image(img_path, width=200, caption=selected.name)
             
-            # MAIN AUDIO PLAYER - Prominent placement
-            st.markdown("#### 🔊 Écouter l'annonce")
+            st.markdown("#### 🔊 Annonce")
             if selected.audio:
                 audio_path = os.path.join(state.assets_dir, os.path.basename(selected.audio))
                 if os.path.exists(audio_path):
                     st.audio(audio_path, format='audio/mp3')
-                    st.success("▶️ Cliquez sur le lecteur ci-dessus pour écouter")
                 else:
-                    st.error(f"❌ Audio non trouvé: {selected.audio}")
+                    st.error("❌ Audio non trouvé")
             else:
-                st.warning("⚠️ Cet élément n'a pas d'audio de navigation")
+                st.warning("⚠️ Pas d'audio de navigation")
         
         with col_list:
-            # List of all options
-            st.markdown("#### 📋 Toutes les options")
+            st.markdown(f"#### 📋 Options ({len(options)})")
             for i, option in enumerate(options):
                 if i == state.current_option_index:
-                    st.markdown(f"👉 **{option.name}** ← sélectionné")
+                    st.markdown(f"👉 **{i+1}. {option.name}** ← molette")
                 else:
-                    st.markdown(f"   {option.name}")
+                    st.markdown(f"　 {i+1}. {option.name}")
     
     elif current_node.type == 'story':
         st.markdown("---")
-        st.success("📖 C'est une histoire !")
+        st.success("📖 Lecture de l'histoire en cours...")
         
-        # Navigation audio (announcement)
-        if current_node.audio:
-            nav_audio_path = os.path.join(state.assets_dir, os.path.basename(current_node.audio))
-            if os.path.exists(nav_audio_path):
-                st.markdown("#### 🔊 Annonce de navigation")
-                st.audio(nav_audio_path, format='audio/mp3')
-        
-        # Story audio (full content)
-        story_audio = getattr(current_node, 'story_audio', None)
-        if story_audio:
-            story_audio_path = os.path.join(state.assets_dir, os.path.basename(story_audio))
+        if current_node.story_audio and not current_node.audio:
+            story_audio_path = os.path.join(state.assets_dir, os.path.basename(current_node.story_audio))
             if os.path.exists(story_audio_path):
                 st.markdown("#### 🎧 Audio de l'histoire")
                 st.audio(story_audio_path, format='audio/mp3')
-                st.info("▶️ Cliquez sur le lecteur pour écouter l'histoire")
-            else:
-                st.warning("⚠️ Fichier audio de l'histoire introuvable")
-        else:
+        elif not current_node.story_audio and not current_node.audio:
             st.warning("⚠️ Pas d'audio pour cette histoire")
     
     else:
@@ -231,12 +261,12 @@ def render_simulator(state: SimulatorState) -> None:
     
     # Navigation buttons
     st.markdown("---")
-    st.markdown("### 🎮 Navigation")
+    st.markdown("### 🎮 Contrôles Lunii")
     
     col_left, col_ok, col_right, col_home = st.columns(4)
     
     with col_left:
-        if st.button("⬅️ Gauche", use_container_width=True, disabled=len(options) <= 1):
+        if st.button("⬅️ Molette ◀", use_container_width=True, disabled=len(options) <= 1):
             if options:
                 state.current_option_index = (state.current_option_index - 1) % len(options)
                 st.rerun()
@@ -251,14 +281,13 @@ def render_simulator(state: SimulatorState) -> None:
                 st.rerun()
     
     with col_right:
-        if st.button("➡️ Droite", use_container_width=True, disabled=len(options) <= 1):
+        if st.button("➡️ Molette ▶", use_container_width=True, disabled=len(options) <= 1):
             if options:
                 state.current_option_index = (state.current_option_index + 1) % len(options)
                 st.rerun()
     
     with col_home:
-        if st.button("🏠 Accueil", use_container_width=True, disabled=len(state.navigation_path) <= 1):
-            # Find entrypoint
+        if st.button("🏠 Home", use_container_width=True, disabled=len(state.navigation_path) <= 1):
             for node in state.pack.stage_nodes:
                 if node.type == 'entrypoint':
                     state.current_node_uuid = node.uuid
@@ -276,7 +305,7 @@ def render_simulator_tab(output_dir: str) -> None:
         output_dir: Directory containing the generated pack
     """
     st.markdown("## 🎮 Simulateur de Navigation")
-    st.markdown("Testez votre pack avant de le télécharger.")
+    st.markdown("Testez votre pack avant de le télécharger. Ce simulateur reproduit le comportement réel de l'appareil Lunii.")
     
     story_json_path = os.path.join(output_dir, "story.json")
     assets_dir = os.path.join(output_dir, "assets")
