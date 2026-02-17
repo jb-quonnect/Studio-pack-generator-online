@@ -486,26 +486,27 @@ def generate_ni(stage_nodes: List[Dict], action_nodes: List[Dict],
             struct.pack_into('<i', node_buf, 24, -1)
             struct.pack_into('<i', node_buf, 28, -1)
 
-        # Control flags — computed from node transitions to match firmware expectations
-        # Reference: olup/lunii-admin-web ni.ts
-        has_ok = ok_data is not None and ok_data.get('actionNode') and list_node_by_id.get(ok_data.get('actionNode', ''))
-        has_home = home_data is not None and home_data.get('actionNode') and list_node_by_id.get(home_data.get('actionNode', ''))
-        is_story_node = not has_ok  # Terminal node = story content, no further navigation
-
-        if is_story_node:
-            # Story/content node: autoplay audio, pause enabled, no wheel/ok
-            wheel_enabled = 0
-            ok_enabled = 0
-            home_enabled = 1 if has_home else 1  # Always enable home on story nodes
-            pause_enabled = 1
-            autoplay_enabled = 1
+        # Control flags — read from controlSettings (set by storyAudio expansion)
+        # or compute from transitions as fallback
+        ctrl = node.get('controlSettings')
+        if ctrl:
+            wheel_enabled = 1 if ctrl.get('wheel', False) else 0
+            ok_enabled = 1 if ctrl.get('ok', False) else 0
+            home_enabled = 1 if ctrl.get('home', False) else 0
+            pause_enabled = 1 if ctrl.get('pause', False) else 0
+            autoplay_enabled = 1 if ctrl.get('autoplay', False) else 0
         else:
-            # Menu/navigation node: wheel+ok for selection, no autoplay
-            wheel_enabled = 1
-            ok_enabled = 1
-            home_enabled = 1 if has_home else 0
-            pause_enabled = 0
-            autoplay_enabled = 0
+            # Fallback: compute from transitions (reference ni.ts behavior)
+            has_ok = ok_data is not None and ok_data.get('actionNode') and list_node_by_id.get(ok_data.get('actionNode', ''))
+            has_home = home_data is not None and home_data.get('actionNode') and list_node_by_id.get(home_data.get('actionNode', ''))
+            is_story_node = not has_ok
+            if is_story_node:
+                wheel_enabled, ok_enabled = 0, 0
+                home_enabled, pause_enabled, autoplay_enabled = 1, 1, 1
+            else:
+                wheel_enabled, ok_enabled = 1, 1
+                home_enabled = 1 if has_home else 0
+                pause_enabled, autoplay_enabled = 0, 0
 
         struct.pack_into('<h', node_buf, 32, wheel_enabled)
         struct.pack_into('<h', node_buf, 34, ok_enabled)
@@ -806,7 +807,99 @@ class LuniiPackConverter:
         description = story.get('description', '')
         pack_version = story.get('version', 2)
 
-        # Generate pack UUID and reference
+        # ─── Expand storyAudio into separate playback nodes ──────────────
+        # The Lunii firmware only supports ONE audio per stageNode. Our story.json
+        # uses `audio` for announcement and `storyAudio` for the full story content.
+        # We need to split each story node into:
+        #   1. Announcement node (image + short audio, okTransition → story action)
+        #   2. Playback node (no image, full audio, autoplay + pause, homeTransition → back)
+        # This matches the architecture of working custom packs (e.g., Pack 52).
+        expanded_stages = []
+        expanded_actions = list(action_nodes)  # Copy existing actions
+
+        # Find the root menu action (the one referenced by the entrypoint's okTransition)
+        root_action_id = None
+        for node in stage_nodes:
+            if node.get('okTransition') and node.get('type') in ('entrypoint', 'cover', None):
+                root_action_id = node['okTransition'].get('actionNode')
+                break
+
+        for node in stage_nodes:
+            story_audio = node.get('storyAudio')
+            if story_audio and node.get('audio'):
+                # This node has both announcement and story audio → split it
+
+                # 1. Announcement node: keeps image + short audio
+                #    Gets okTransition to a NEW action that leads to the playback node
+                announce_node = dict(node)
+                # Remove storyAudio from the announcement node
+                announce_node.pop('storyAudio', None)
+
+                # Create a new action node that leads to the playback node
+                playback_uuid = str(uuid.uuid4())
+                story_action_id = str(uuid.uuid4())
+                story_action = {
+                    'id': story_action_id,
+                    'options': [playback_uuid]
+                }
+                expanded_actions.append(story_action)
+
+                # Set okTransition on the announcement node → story action
+                announce_node['okTransition'] = {
+                    'actionNode': story_action_id,
+                    'optionIndex': 0
+                }
+                # Control settings for announcement: NO wheel/ok (auto-transition)
+                announce_node['controlSettings'] = {
+                    'wheel': False, 'ok': False, 'home': True,
+                    'pause': False, 'autoplay': True
+                }
+                expanded_stages.append(announce_node)
+
+                # 2. Playback node: full story audio, no image, autoplay + pause
+                playback_node = {
+                    'uuid': playback_uuid,
+                    'type': 'story',
+                    'name': node.get('name', '') + ' (playback)',
+                    'audio': story_audio,  # Full story audio
+                    # No image (firmware shows nothing or uses parent)
+                    'okTransition': None,
+                    'controlSettings': {
+                        'wheel': False, 'ok': False, 'home': True,
+                        'pause': True, 'autoplay': True
+                    }
+                }
+
+                # Add homeTransition back to the root menu if we know it
+                if root_action_id:
+                    playback_node['homeTransition'] = {
+                        'actionNode': root_action_id,
+                        'optionIndex': 0
+                    }
+
+                expanded_stages.append(playback_node)
+
+                logger.info(f"Expanded storyAudio: '{node.get('name')}' → announcement + playback nodes")
+            else:
+                # Node has no storyAudio, or only one audio type → keep as-is
+                # Ensure controlSettings exist
+                if 'controlSettings' not in node:
+                    has_transition = node.get('okTransition') is not None
+                    node['controlSettings'] = {
+                        'wheel': has_transition,
+                        'ok': has_transition,
+                        'home': not has_transition,  # home on terminal nodes
+                        'pause': not has_transition,
+                        'autoplay': not has_transition
+                    }
+                expanded_stages.append(node)
+
+        # Replace with expanded node lists
+        stage_nodes = expanded_stages
+        action_nodes = expanded_actions
+        logger.info(f"After expansion: {len(stage_nodes)} stageNodes, {len(action_nodes)} actionNodes")
+
+        # ─── Generate pack UUID and reference ─────────────────────────────
         pack_uuid = uuid.uuid4()
         # Use first stageNode UUID if available (matching reference behavior)
         story_uuid = story.get('uuid') or (stage_nodes[0]['uuid'] if stage_nodes else str(pack_uuid))
