@@ -122,6 +122,9 @@ def init_session_state():
         # RSS settings
         st.session_state.rss_episodes_per_part = 10
         st.session_state.rss_feed = None
+        st.session_state.rss_selected_episodes = None   # Episodes selected in step 1
+        st.session_state.rss_chapters = None            # List of {"name": str, "episodes": [...]}
+        st.session_state.rss_chapter_mode = False       # True = show chapter editor
         
         # Tree structure for manual building
         st.session_state.tree_nodes = []
@@ -471,11 +474,22 @@ def render_rss_input():
     st.markdown("### 📡 Import de Podcast")
     st.markdown("Recherchez un podcast ou collez directement l'URL d'un flux RSS.")
     
-    # Initialize session state for search
+    # Initialize session state for search (guard — init_session_state handles the rest)
     if 'rss_search_results' not in st.session_state:
         st.session_state.rss_search_results = None
-    
-    # Search/URL Input - Wrapped in form for Enter key support
+    if 'rss_chapter_mode' not in st.session_state:
+        st.session_state.rss_chapter_mode = False
+    if 'rss_chapters' not in st.session_state:
+        st.session_state.rss_chapters = None
+    if 'rss_selected_episodes' not in st.session_state:
+        st.session_state.rss_selected_episodes = None
+
+    # ─── CHAPTER EDITOR (Step 2) ─────────────────────────────────────────────
+    if st.session_state.rss_chapter_mode and st.session_state.rss_chapters is not None:
+        _render_chapter_editor()
+        return
+
+    # ─── SEARCH BAR ──────────────────────────────────────────────────────────
     with st.form("search_form"):
         col_search, col_btn = st.columns([4, 1])
         
@@ -492,27 +506,22 @@ def render_rss_input():
     
     # Handle Input (Search vs URL)
     if search_submitted and search_query:
-        # Check if it's a URL
         from urllib.parse import urlparse
         parsed = urlparse(search_query)
         if parsed.scheme in ('http', 'https') and parsed.netloc:
-            # It's a direct URL
             with st.spinner("Chargement du flux RSS..."):
                 feed = parse_rss_feed(search_query)
                 if feed:
                     st.session_state.rss_feed = feed
-                    st.session_state.rss_search_results = None # Clear search results
+                    st.session_state.rss_search_results = None
                     st.success(f"✅ {len(feed.episodes)} épisodes trouvés")
                     st.rerun()
                 else:
                     st.error("❌ Impossible de charger le flux RSS")
         else:
-            # It's a search term
             from modules.podcast_search import unified_search
-            
             with st.spinner(f"Recherche de '{search_query}'..."):
                 results = unified_search(search_query)
-                
             if results:
                 st.session_state.rss_search_results = results
             else:
@@ -522,84 +531,301 @@ def render_rss_input():
     # Display Search Results (Persisted)
     if st.session_state.rss_search_results:
         st.markdown(f"**{len(st.session_state.rss_search_results)} résultats trouvés :**")
-        
-        # Display results in a grid
         cols = st.columns(3)
         for idx, res in enumerate(st.session_state.rss_search_results):
             with cols[idx % 3]:
                 with st.container(border=True):
-                    # Image
                     if res.image_url:
                         st.image(res.image_url, use_container_width=True)
-                    
-                    # Info
                     st.markdown(f"**{res.title}**")
                     st.caption(res.author)
-                    
-                    # Select Button
                     if st.button("Choisir", key=f"sel_{idx}", use_container_width=True):
                         with st.spinner("Chargement..."):
-                            # Pass existing metadata to avoid re-fetching issues with API
                             feed = parse_rss_feed(
-                                res.feed_url, 
-                                existing_title=res.title, 
+                                res.feed_url,
+                                existing_title=res.title,
                                 existing_image_url=res.image_url
                             )
                             if feed:
                                 st.session_state.rss_feed = feed
-                                st.session_state.rss_search_results = None # Clear search to show feed
+                                st.session_state.rss_search_results = None
                                 st.rerun()
                             else:
                                 st.error(f"Erreur lors du chargement : {res.feed_url}")
-        
         st.markdown("---")
 
-    # Display loaded feed (Common for both Search and Direct URL)
+    # ─── FEED DISPLAY (Step 1 : episode selection) ────────────────────────────
     if st.session_state.get('rss_feed'):
         feed = st.session_state.rss_feed
         
-        st.markdown(f"### 🎙️ {feed.title}")
+        col_title, col_reset = st.columns([4, 1])
+        with col_title:
+            st.markdown(f"### 🎙️ {feed.title}")
+        with col_reset:
+            if st.button("↩ Changer", use_container_width=True):
+                st.session_state.rss_feed = None
+                st.session_state.rss_chapter_mode = False
+                st.session_state.rss_chapters = None
+                st.rerun()
+
         if feed.description:
             st.caption(feed.description[:200] + "..." if len(feed.description) > 200 else feed.description)
-        
-        # Start of existing feed display logic...
-        
-        # Episodes per part slider
-        st.slider(
-            "Épisodes par partie",
-            min_value=1,
-            max_value=50,
-            value=10,
-            key='rss_episodes_per_part',
-            help="Les épisodes seront regroupés en parties de cette taille"
-        )
-        
-        # Episode selection
-        st.markdown("#### 📋 Sélection des épisodes")
-        
+
+        total = len(feed.episodes)
+        st.markdown(f"#### 📋 Sélection des épisodes ({total} disponibles)")
+
+        # Select / Deselect All
+        col_sa, col_da = st.columns(2)
+        with col_sa:
+            if st.button("✅ Tout sélectionner", use_container_width=True, key='rss_select_all'):
+                for i in range(total):
+                    st.session_state[f'ep_{i}'] = True
+                st.rerun()
+        with col_da:
+            if st.button("⬜ Tout désélectionner", use_container_width=True, key='rss_deselect_all'):
+                for i in range(total):
+                    st.session_state[f'ep_{i}'] = False
+                st.rerun()
+
+        # Show all episodes (no limit)
         selected_episodes = []
-        for i, ep in enumerate(feed.episodes[:50]):  # Limit display
-            duration_str = f"({ep.duration // 60:.0f} min)" if ep.duration else ""
-            selected = st.checkbox(
-                f"{ep.title} {duration_str}",
-                value=True,
-                key=f'ep_{i}'
-            )
-            if selected:
-                selected_episodes.append(ep)
-        
-        if len(feed.episodes) > 50:
-            st.warning(f"⚠️ Seuls les 50 premiers épisodes sont affichés ({len(feed.episodes)} au total)")
-        
+        with st.container():
+            for i, ep in enumerate(feed.episodes):
+                duration_str = f" ({ep.duration // 60:.0f} min)" if ep.duration else ""
+                selected = st.checkbox(
+                    f"{ep.title}{duration_str}",
+                    value=st.session_state.get(f'ep_{i}', True),
+                    key=f'ep_{i}'
+                )
+                if selected:
+                    selected_episodes.append(ep)
+
+        n_sel = len(selected_episodes)
+        st.caption(f"**{n_sel}** épisode(s) sélectionné(s) sur {total}")
+
         # Pack settings
         st.markdown("---")
         st.session_state.pack_title = feed.title
         render_pack_settings(key_prefix="rss")
-        
-        # Generate button
+
+        # Action buttons
         st.markdown("---")
-        if st.button("🚀 Générer le Pack RSS", type="primary", use_container_width=True, key='gen_rss'):
-            generate_pack_from_rss(feed, selected_episodes)
+        col_chap, col_gen = st.columns(2)
+
+        with col_chap:
+            if st.button(
+                "📚 Organiser en chapitres →",
+                type="secondary",
+                use_container_width=True,
+                key='goto_chapters',
+                disabled=(n_sel == 0)
+            ):
+                # Default: one chapter per N episodes (10 by default)
+                eps_per_chap = 10
+                chapters = []
+                for chunk_start in range(0, len(selected_episodes), eps_per_chap):
+                    chunk = selected_episodes[chunk_start:chunk_start + eps_per_chap]
+                    chap_num = len(chapters) + 1
+                    chapters.append({
+                        "name": f"Chapitre {chap_num}",
+                        "episodes": list(chunk)
+                    })
+                st.session_state.rss_selected_episodes = selected_episodes
+                st.session_state.rss_chapters = chapters
+                st.session_state.rss_chapter_mode = True
+                st.rerun()
+
+        with col_gen:
+            if st.button(
+                "🚀 Générer le Pack RSS (sans chapitres)",
+                type="primary",
+                use_container_width=True,
+                key='gen_rss',
+                disabled=(n_sel == 0)
+            ):
+                generate_pack_from_rss(feed, selected_episodes)
+
+
+def _render_chapter_editor():
+    """Affiche l'éditeur de chapitres (étape 2 du flux RSS)."""
+    feed = st.session_state.rss_feed
+    chapters: list = st.session_state.rss_chapters  # List of {"name": str, "episodes": [...]}
+    
+    # Collect all assigned episodes to detect unassigned ones
+    all_selected = st.session_state.rss_selected_episodes or []
+    assigned_guids = {ep.guid or ep.title for ch in chapters for ep in ch["episodes"]}
+    unassigned = [ep for ep in all_selected if (ep.guid or ep.title) not in assigned_guids]
+
+    st.markdown(f"### 📚 Organiser en chapitres — *{feed.title}*")
+
+    # Auto-organize toolbar
+    with st.container(border=True):
+        st.caption("**Auto-organisation**")
+        col_slider, col_auto = st.columns([3, 1])
+        with col_slider:
+            eps_per_chap = st.slider(
+                "Épisodes par chapitre",
+                min_value=1, max_value=50,
+                value=st.session_state.get('rss_episodes_per_part', 10),
+                key='rss_auto_chap_size',
+                label_visibility="collapsed"
+            )
+        with col_auto:
+            if st.button("🔀 Auto-organiser", use_container_width=True, key='auto_organize'):
+                new_chapters = []
+                for i, chunk_start in enumerate(range(0, len(all_selected), eps_per_chap)):
+                    chunk = all_selected[chunk_start:chunk_start + eps_per_chap]
+                    new_chapters.append({
+                        "name": f"Chapitre {i + 1}",
+                        "episodes": list(chunk)
+                    })
+                st.session_state.rss_chapters = new_chapters
+                st.rerun()
+
+    st.markdown("---")
+
+    # ── Chapter list ──────────────────────────────────────────────────────────
+    action_needed = None  # Tuple describing a pending action to apply after loop
+
+    for ch_idx, chapter in enumerate(chapters):
+        with st.container(border=True):
+            # Chapter header
+            col_name, col_del = st.columns([5, 1])
+            with col_name:
+                new_name = st.text_input(
+                    f"Nom du chapitre {ch_idx + 1}",
+                    value=chapter["name"],
+                    key=f"chap_name_{ch_idx}",
+                    label_visibility="collapsed",
+                    placeholder=f"Chapitre {ch_idx + 1}"
+                )
+                if new_name != chapter["name"]:
+                    chapter["name"] = new_name
+                    st.session_state.rss_chapters = chapters
+            with col_del:
+                if st.button("🗑", key=f"del_chap_{ch_idx}", help="Supprimer ce chapitre (les épisodes deviennent non-assignés)"):
+                    action_needed = ("del_chap", ch_idx)
+
+            # Episode list in this chapter
+            eps = chapter["episodes"]
+            if not eps:
+                st.caption("*(Aucun épisode)*")
+            else:
+                # Build list of other chapter names for the move selector
+                other_chapters = [f"ch_{i}" for i in range(len(chapters)) if i != ch_idx]
+                other_chapter_labels = {
+                    f"ch_{i}": f"→ {chapters[i]['name']}"
+                    for i in range(len(chapters)) if i != ch_idx
+                }
+                if unassigned:
+                    other_chapter_labels["__unassign__"] = "→ Non-assignés"
+                    other_chapters.append("__unassign__")
+
+                for ep_idx, ep in enumerate(eps):
+                    col_ep, col_up, col_down, col_move = st.columns([5, 1, 1, 2])
+                    with col_ep:
+                        dur = f" ({ep.duration // 60:.0f}m)" if ep.duration else ""
+                        st.markdown(f"<small>📄 {ep.title[:60]}{dur}</small>", unsafe_allow_html=True)
+                    with col_up:
+                        if ep_idx > 0 and st.button("↑", key=f"up_{ch_idx}_{ep_idx}", help="Monter"):
+                            action_needed = ("move_ep_up", ch_idx, ep_idx)
+                    with col_down:
+                        if ep_idx < len(eps) - 1 and st.button("↓", key=f"dn_{ch_idx}_{ep_idx}", help="Descendre"):
+                            action_needed = ("move_ep_dn", ch_idx, ep_idx)
+                    with col_move:
+                        if other_chapters:
+                            dest = st.selectbox(
+                                "Déplacer vers",
+                                options=[""] + other_chapters,
+                                format_func=lambda x: "Déplacer…" if x == "" else other_chapter_labels.get(x, x),
+                                key=f"mv_{ch_idx}_{ep_idx}",
+                                label_visibility="collapsed"
+                            )
+                            if dest:
+                                action_needed = ("move_ep_to", ch_idx, ep_idx, dest)
+
+    # ── Unassigned pool ───────────────────────────────────────────────────────
+    if unassigned:
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("**🗂 Épisodes non-assignés**")
+            chap_options = [f"ch_{i}" for i in range(len(chapters))]
+            chap_labels = {f"ch_{i}": chapters[i]["name"] for i in range(len(chapters))}
+            for ep_idx, ep in enumerate(unassigned):
+                col_ep, col_mv = st.columns([5, 2])
+                with col_ep:
+                    dur = f" ({ep.duration // 60:.0f}m)" if ep.duration else ""
+                    st.markdown(f"<small>📄 {ep.title[:60]}{dur}</small>", unsafe_allow_html=True)
+                with col_mv:
+                    if chap_options:
+                        dest = st.selectbox(
+                            "Assigner à",
+                            options=[""] + chap_options,
+                            format_func=lambda x: "Assigner…" if x == "" else chap_labels.get(x, x),
+                            key=f"ua_mv_{ep_idx}",
+                            label_visibility="collapsed"
+                        )
+                        if dest:
+                            action_needed = ("assign_unassigned", ep_idx, dest)
+
+    # ── Add chapter button ────────────────────────────────────────────────────
+    st.markdown("---")
+    if st.button("➕ Ajouter un chapitre vide", key='add_chapter'):
+        chapters.append({"name": f"Chapitre {len(chapters) + 1}", "episodes": []})
+        st.session_state.rss_chapters = chapters
+        st.rerun()
+
+    # ── Back / Generate ───────────────────────────────────────────────────────
+    col_back, col_gen = st.columns(2)
+    with col_back:
+        if st.button("← Retour à la sélection", use_container_width=True, key='back_to_sel'):
+            st.session_state.rss_chapter_mode = False
+            st.rerun()
+    with col_gen:
+        n_chapters = len([ch for ch in chapters if ch["episodes"]])
+        total_eps = sum(len(ch["episodes"]) for ch in chapters)
+        if st.button(
+            f"🚀 Générer ({n_chapters} chapitres, {total_eps} épisodes)",
+            type="primary",
+            use_container_width=True,
+            key='gen_chaptered',
+            disabled=(total_eps == 0)
+        ):
+            generate_pack_from_rss(feed, all_selected, chapters=chapters)
+
+    # ── Apply deferred actions (after rendering, to avoid mid-loop mutations) ─
+    if action_needed:
+        op = action_needed[0]
+
+        if op == "del_chap":
+            _, ci = action_needed
+            chapters.pop(ci)
+        elif op == "move_ep_up":
+            _, ci, ei = action_needed
+            eps = chapters[ci]["episodes"]
+            eps[ei - 1], eps[ei] = eps[ei], eps[ei - 1]
+            chapters[ci]["episodes"] = eps
+        elif op == "move_ep_dn":
+            _, ci, ei = action_needed
+            eps = chapters[ci]["episodes"]
+            eps[ei], eps[ei + 1] = eps[ei + 1], eps[ei]
+            chapters[ci]["episodes"] = eps
+        elif op == "move_ep_to":
+            _, ci, ei, dest = action_needed
+            ep = chapters[ci]["episodes"].pop(ei)
+            if dest == "__unassign__":
+                pass  # Just remove from chapter; it'll appear in unassigned
+            else:
+                di = int(dest.split("_")[1])
+                chapters[di]["episodes"].append(ep)
+        elif op == "assign_unassigned":
+            _, ui, dest = action_needed
+            di = int(dest.split("_")[1])
+            ep = unassigned[ui]
+            chapters[di]["episodes"].append(ep)
+
+        st.session_state.rss_chapters = chapters
+        st.rerun()
 
 
 def render_extract_mode():
@@ -826,11 +1052,18 @@ def generate_pack_from_zip(zip_path: str):
         st.error("❌ Erreur lors de la génération du pack")
 
 
-def generate_pack_from_rss(feed: RssFeed, selected_episodes: list):
-    """Génère un pack à partir d'un flux RSS et des épisodes sélectionnés."""
+def generate_pack_from_rss(feed: RssFeed, selected_episodes: list, chapters: list = None):
+    """Génère un pack à partir d'un flux RSS et des épisodes sélectionnés.
+    
+    Args:
+        feed: Le flux RSS parsé
+        selected_episodes: Liste fusionnée de tous les épisodes sélectionnés
+        chapters: (optionnel) Liste de {"name": str, "episodes": [...]} pour un pack chapitré.
+                  Si None ou vide, comportement flat (épisodes directement sous la racine).
+    """
     from modules.rss_handler import (
-        download_episode_audio, download_episode_image, 
-        split_episodes_into_parts, download_feed_image
+        download_episode_audio, download_episode_image,
+        download_feed_image
     )
     
     if not selected_episodes:
@@ -838,102 +1071,102 @@ def generate_pack_from_rss(feed: RssFeed, selected_episodes: list):
         return
     
     session = get_session_manager()
-    
-    # Create folder structure
     input_folder = os.path.join(session.session.input_dir, "podcast")
     ensure_dir(input_folder)
     
-    # Get episodes per part setting
-    episodes_per_part = st.session_state.get('rss_episodes_per_part', 10)
-    
-    # Split episodes into parts
-    parts = split_episodes_into_parts(selected_episodes, episodes_per_part)
+    # Determine episode list to download
+    # When using chapters, download all episodes present in the chapters
+    if chapters:
+        eps_to_download = [ep for ch in chapters for ep in ch["episodes"]]
+    else:
+        eps_to_download = selected_episodes
     
     # Progress tracking
-    total_steps = len(selected_episodes) + len(parts) + 3  # +1 for feed image
+    total_steps = len(eps_to_download) + 5
     current_step = 0
     progress_bar = st.progress(0, text="Préparation...")
     
     def update_progress(step: int, message: str):
         nonlocal current_step
         current_step = step
-        progress_bar.progress(current_step / total_steps, text=message)
+        progress_bar.progress(min(current_step / total_steps, 0.99), text=message)
     
-    # Download feed image first
+    # Download feed image
     update_progress(1, "Téléchargement de l'image du podcast...")
     feed_image_path = download_feed_image(feed, input_folder)
     
-    # Download episodes
-    st.info(f"📥 Téléchargement de {len(selected_episodes)} épisode(s)...")
+    # Download all episode audio + images
+    st.info(f"📥 Téléchargement de {len(eps_to_download)} épisode(s)...")
     
-    for i, ep in enumerate(selected_episodes):
+    for i, ep in enumerate(eps_to_download):
         update_progress(i + 2, f"Téléchargement: {ep.title[:40]}...")
-        
-        # Download audio
         if not download_episode_audio(ep, input_folder):
             st.warning(f"⚠️ Impossible de télécharger: {ep.title}")
-            continue
-        
-        # Download image if available
-        download_episode_image(ep, input_folder)
+        else:
+            download_episode_image(ep, input_folder)
     
-    # Build tree structure
-    update_progress(len(selected_episodes) + 2, "Construction de la structure...")
+    update_progress(len(eps_to_download) + 2, "Construction de la structure...")
     
-    # Create root node with feed image
+    # ── Build tree ────────────────────────────────────────────────────────────
+    pack_title = st.session_state.pack_title or feed.title
     root = TreeNode(
-        name=st.session_state.pack_title or feed.title,
+        name=pack_title,
         path=input_folder,
         is_folder=True,
-        item_image=feed_image_path  # Use feed image for root
+        item_image=feed_image_path
     )
-    
-    # If only one part, add episodes directly
-    if len(parts) == 1:
-        for ep in parts[0]:
-            if ep.audio_path:
-                child = TreeNode(
-                    name=clean_name(ep.title),
-                    path=ep.audio_path,
-                    is_folder=False,
-                    audio_file=ep.audio_path,
-                    item_image=ep.image_path
-                )
-                root.children.append(child)
-    else:
-        # Multiple parts - create sub-menus
-        for part_idx, part in enumerate(parts):
-            part_name = f"Partie {part_idx + 1}"
-            part_folder = os.path.join(input_folder, part_name)
-            ensure_dir(part_folder)
+
+    def make_story_node(ep):
+        """Return a story TreeNode for a downloaded episode, or None if not downloaded."""
+        if not ep.audio_path:
+            return None
+        return TreeNode(
+            name=clean_name(ep.title),
+            path=ep.audio_path,
+            is_folder=False,
+            audio_file=ep.audio_path,
+            item_image=ep.image_path
+        )
+
+    if chapters:
+        # ── Chaptered mode ────────────────────────────────────────────────────
+        for ch in chapters:
+            ch_eps = [ep for ep in ch["episodes"] if ep.audio_path]
+            if not ch_eps:
+                continue  # Skip empty chapters
             
-            part_node = TreeNode(
-                name=part_name,
-                path=part_folder,
-                is_folder=True
+            # Chapter folder node: use first episode image if available, else feed image
+            ch_image = ch_eps[0].image_path if ch_eps[0].image_path else feed_image_path
+            ch_folder = os.path.join(input_folder, clean_name(ch["name"]))
+            ensure_dir(ch_folder)
+            
+            ch_node = TreeNode(
+                name=ch["name"],
+                path=ch_folder,
+                is_folder=True,
+                item_image=ch_image
             )
+            for ep in ch_eps:
+                story = make_story_node(ep)
+                if story:
+                    ch_node.children.append(story)
             
-            for ep in part:
-                if ep.audio_path:
-                    child = TreeNode(
-                        name=clean_name(ep.title),
-                        path=ep.audio_path,
-                        is_folder=False,
-                        audio_file=ep.audio_path,
-                        item_image=ep.image_path
-                    )
-                    part_node.children.append(child)
-            
-            if part_node.children:
-                root.children.append(part_node)
+            if ch_node.children:
+                root.children.append(ch_node)
+    else:
+        # ── Flat mode (no chapters) ───────────────────────────────────────────
+        for ep in eps_to_download:
+            story = make_story_node(ep)
+            if story:
+                root.children.append(story)
     
     if not root.children:
         st.error("❌ Aucun épisode n'a pu être téléchargé")
         return
     
-    # Build options
+    # ── Build options ─────────────────────────────────────────────────────────
     options = BuildOptions(
-        title=st.session_state.pack_title or feed.title,
+        title=pack_title,
         description=feed.description[:200] if feed.description else "",
         normalize_audio=st.session_state.get('normalize_audio', True),
         add_delay=st.session_state.get('add_delay', False),
@@ -943,14 +1176,14 @@ def generate_pack_from_rss(feed: RssFeed, selected_episodes: list):
     
     def build_progress(progress: float, message: str):
         update_progress(
-            len(selected_episodes) + 1 + int(progress * len(parts)),
+            len(eps_to_download) + 3 + int(progress * 2),
             message
         )
     
     options.progress_callback = build_progress
     
-    # Build pack
-    update_progress(len(selected_episodes) + len(parts), "Génération du pack...")
+    # ── Generate pack ─────────────────────────────────────────────────────────
+    update_progress(len(eps_to_download) + 3, "Génération du pack...")
     builder = PackBuilder(options)
     
     if builder.build_from_tree(root):
@@ -960,11 +1193,14 @@ def generate_pack_from_rss(feed: RssFeed, selected_episodes: list):
         st.session_state.generation_complete = True
         st.session_state.output_zip_path = zip_path
         
-        # Store ZIP data for persistence across tabs
         with open(zip_path, 'rb') as f:
             st.session_state.output_zip_data = f.read()
         st.session_state.output_pack_filename = f"{clean_name(feed.title)}_pack.zip"
-        # Rerun to show updated layout with preview/download sections
+        
+        # Reset chapter mode
+        st.session_state.rss_chapter_mode = False
+        st.session_state.rss_chapters = None
+        
         st.rerun()
     else:
         st.error("❌ Erreur lors de la génération du pack")

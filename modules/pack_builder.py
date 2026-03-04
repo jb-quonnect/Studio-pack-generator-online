@@ -393,17 +393,19 @@ class PackBuilder:
             
             # Process children into the menu action
             for child in root.children:
-                self._build_node(child, action_menu)
+                # action_menu is the selection wheel — stories return here after ending
+                self._build_node(child, action_menu, parent_menu_action=action_menu)
         
         return True
     
-    def _build_node(self, node: TreeNode, parent_action: ActionNode, depth: int = 0) -> None:
+    def _build_node(self, node: TreeNode, parent_action: ActionNode, parent_menu_action: ActionNode = None, depth: int = 0) -> None:
         """
         Build a single node in the story structure.
         
         Args:
             node: Tree node to build
             parent_action: Parent action node to link to
+            parent_menu_action: The action node that lists this node's siblings (used for home_transition)
             depth: Current depth
         """
         if depth > 10:
@@ -424,7 +426,9 @@ class PackBuilder:
                 self.story_gen.link_node_to_action(menu, action)
                 
                 for child in node.children:
-                    self._build_node(child, action, depth + 1)
+                    # Pass 'action' as parent_menu_action so stories inside this folder
+                    # know to return here (home_transition) when they end
+                    self._build_node(child, action, parent_menu_action=action, depth=depth + 1)
         
         else:
             # Create story node with navigation audio and story audio
@@ -433,8 +437,10 @@ class PackBuilder:
                 audio=f"assets/{node.audio_asset}" if node.audio_asset else "",
                 image=f"assets/{node.image_asset}" if node.image_asset else None,
                 nav_audio=f"assets/{node.nav_audio_asset}" if node.nav_audio_asset else None,
-                parent_action_id=parent_action.id
+                parent_action_id=parent_action.id,
+                home_action_id=parent_menu_action.id if parent_menu_action else None
             )
+
     
     def get_output_zip_path(self) -> str:
         """Get path to the generated ZIP file."""

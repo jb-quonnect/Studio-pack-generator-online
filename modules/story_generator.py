@@ -231,7 +231,8 @@ class StoryGenerator:
         audio: str,
         image: Optional[str] = None,
         nav_audio: Optional[str] = None,
-        parent_action_id: Optional[str] = None
+        parent_action_id: Optional[str] = None,
+        home_action_id: Optional[str] = None
     ) -> StageNode:
         """
         Create a story node (playable audio).
@@ -242,6 +243,7 @@ class StoryGenerator:
             image: Asset path for image
             nav_audio: Asset path for navigation announcement audio
             parent_action_id: ID of parent ActionNode to link to
+            home_action_id: ID of ActionNode to return to when story ends (home button / end of story)
             
         Returns:
             Created StageNode
@@ -255,6 +257,10 @@ class StoryGenerator:
             story_audio=audio  # Story audio for playback
         )
         
+        # Wire home_transition so device returns to the parent menu after story ends
+        if home_action_id:
+            node.home_transition = home_action_id
+        
         self.pack.stage_nodes.append(node)
         self._node_map[node.uuid] = node
         
@@ -263,6 +269,7 @@ class StoryGenerator:
             self._action_map[parent_action_id].options.append(node.uuid)
         
         return node
+
     
     def create_action(self, options: Optional[List[str]] = None) -> ActionNode:
         """
