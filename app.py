@@ -722,7 +722,7 @@ def _render_chapter_editor():
                     other_chapters.append("__unassign__")
 
                 for ep_idx, ep in enumerate(eps):
-                    col_ep, col_up, col_down, col_move = st.columns([5, 1, 1, 2])
+                    col_ep, col_up, col_down, col_move, col_del = st.columns([4, 1, 1, 2, 1])
                     with col_ep:
                         dur = f" ({ep.duration // 60:.0f}m)" if ep.duration else ""
                         st.markdown(f"<small>📄 {ep.title[:60]}{dur}</small>", unsafe_allow_html=True)
@@ -743,6 +743,9 @@ def _render_chapter_editor():
                             )
                             if dest:
                                 action_needed = ("move_ep_to", ch_idx, ep_idx, dest)
+                    with col_del:
+                        if st.button("🗑️", key=f"del_ep_{ch_idx}_{ep_idx}", help="Retirer cet épisode du pack"):
+                            action_needed = ("del_ep", ch_idx, ep_idx)
 
     # ── Unassigned pool ───────────────────────────────────────────────────────
     if unassigned:
@@ -752,7 +755,7 @@ def _render_chapter_editor():
             chap_options = [f"ch_{i}" for i in range(len(chapters))]
             chap_labels = {f"ch_{i}": chapters[i]["name"] for i in range(len(chapters))}
             for ep_idx, ep in enumerate(unassigned):
-                col_ep, col_mv = st.columns([5, 2])
+                col_ep, col_mv, col_del = st.columns([4, 2, 1])
                 with col_ep:
                     dur = f" ({ep.duration // 60:.0f}m)" if ep.duration else ""
                     st.markdown(f"<small>📄 {ep.title[:60]}{dur}</small>", unsafe_allow_html=True)
@@ -767,6 +770,9 @@ def _render_chapter_editor():
                         )
                         if dest:
                             action_needed = ("assign_unassigned", ep_idx, dest)
+                with col_del:
+                    if st.button("🗑️", key=f"del_ua_{ep_idx}", help="Retirer cet épisode du pack"):
+                        action_needed = ("del_unassigned", ep_idx)
 
     # ── Add chapter button ────────────────────────────────────────────────────
     st.markdown("---")
@@ -823,6 +829,27 @@ def _render_chapter_editor():
             di = int(dest.split("_")[1])
             ep = unassigned[ui]
             chapters[di]["episodes"].append(ep)
+        elif op in ("del_ep", "del_unassigned"):
+            if op == "del_ep":
+                _, ci, ei = action_needed
+                ep = chapters[ci]["episodes"].pop(ei)
+            else:
+                _, ui = action_needed
+                ep = unassigned[ui]
+            
+            # Remove from selected episodes
+            ep_id = ep.guid or ep.title
+            all_selected = st.session_state.rss_selected_episodes
+            st.session_state.rss_selected_episodes = [
+                e for e in all_selected if (e.guid or e.title) != ep_id
+            ]
+            
+            # Uncheck it in the global list so it doesn't reappear if we go back
+            feed = st.session_state.rss_feed
+            if feed:
+                for idx, feed_ep in enumerate(feed.episodes):
+                    if (feed_ep.guid or feed_ep.title) == ep_id:
+                        st.session_state[f'ep_{idx}'] = False
 
         st.session_state.rss_chapters = chapters
         st.rerun()
