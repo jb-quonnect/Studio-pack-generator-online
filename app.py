@@ -13,6 +13,7 @@ Fonctionnalités:
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import tempfile
 import shutil
@@ -96,6 +97,73 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ─── Umami Analytics ──────────────────────────────────────────────────────────
+
+def inject_umami_analytics():
+    """Injecte le script de tracking Umami si les variables d'environnement sont configurées.
+    
+    Variables d'environnement requises :
+    - UMAMI_URL       : URL de votre instance Umami (ex: https://umami.example.com)
+    - UMAMI_WEBSITE_ID: Identifiant du site dans Umami
+    """
+    umami_url = os.environ.get("UMAMI_URL", "").rstrip("/")
+    website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
+    
+    if not umami_url or not website_id:
+        return  # Umami non configuré, on ne fait rien
+    
+    # Injecter le script une seule fois par session
+    if st.session_state.get('_umami_injected'):
+        return
+    st.session_state['_umami_injected'] = True
+    
+    script_url = f"{umami_url}/script.js"
+    
+    html = f"""
+    <script
+        defer
+        src="{script_url}"
+        data-website-id="{website_id}"
+        data-auto-track="true"
+    ></script>
+    """
+    components.html(html, height=0)
+
+
+def track_event(event_name: str, data: dict = None):
+    """Envoie un événement personnalisé à Umami via JavaScript.
+    
+    Args:
+        event_name: Nom de l'événement (ex: 'pack_generated')
+        data: Dictionnaire de données optionnelles associées à l'événement
+    """
+    umami_url = os.environ.get("UMAMI_URL", "")
+    website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
+    
+    if not umami_url or not website_id:
+        return
+    
+    import json
+    data_json = json.dumps(data or {})
+    
+    js = f"""
+    <script>
+    (function() {{
+        function sendEvent() {{
+            if (typeof umami !== 'undefined') {{
+                umami.track('{event_name}', {data_json});
+            }} else {{
+                // Retry after a delay if umami not loaded yet
+                setTimeout(sendEvent, 500);
+            }}
+        }}
+        sendEvent();
+    }})();
+    </script>
+    """
+    components.html(js, height=0)
 
 
 def init_session_state():
@@ -1007,6 +1075,13 @@ def generate_pack_from_files(audio_files, image_files):
         with open(zip_path, 'rb') as f:
             st.session_state.output_zip_data = f.read()
         st.session_state.output_pack_filename = os.path.basename(zip_path)
+        
+        # Track pack generation event
+        track_event('pack_generated', {
+            'source': 'files',
+            'title': st.session_state.pack_title
+        })
+        
         # Rerun to show updated layout with preview/download sections
         st.rerun()
     
@@ -1073,6 +1148,13 @@ def generate_pack_from_zip(zip_path: str):
         with open(zip_path, 'rb') as f:
             st.session_state.output_zip_data = f.read()
         st.session_state.output_pack_filename = os.path.basename(zip_path)
+        
+        # Track pack generation event
+        track_event('pack_generated', {
+            'source': 'zip',
+            'title': st.session_state.pack_title
+        })
+        
         # Rerun to show updated layout with preview/download sections
         st.rerun()
     else:
@@ -1223,6 +1305,14 @@ def generate_pack_from_rss(feed: RssFeed, selected_episodes: list, chapters: lis
         with open(zip_path, 'rb') as f:
             st.session_state.output_zip_data = f.read()
         st.session_state.output_pack_filename = f"{clean_name(feed.title)}_pack.zip"
+        
+        # Track pack generation event
+        track_event('pack_generated', {
+            'source': 'rss',
+            'title': feed.title,
+            'episodes': len(eps_to_download),
+            'chaptered': bool(chapters)
+        })
         
         # Reset chapter mode
         st.session_state.rss_chapter_mode = False
@@ -1525,6 +1615,9 @@ def main():
     """Point d'entrée principal de l'application."""
     # Initialisation
     init_session_state()
+    
+    # Tracking Umami (analytics)
+    inject_umami_analytics()
     
     # En-tête
     render_header()
