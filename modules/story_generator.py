@@ -116,7 +116,7 @@ class StoryPack:
             "version": self.version,
             "title": self.title,
             "description": self.description,
-            "nightMode": self.night_mode,
+            "nightModeAvailable": self.night_mode,
             "stageNodes": [node.to_dict() for node in self.stage_nodes],
             "actionNodes": [node.to_dict() for node in self.action_nodes]
         }

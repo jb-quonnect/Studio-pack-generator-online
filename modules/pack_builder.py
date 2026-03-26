@@ -372,6 +372,7 @@ class PackBuilder:
             # Create "Choisis une histoire" intermediate node
             choose_node = self.story_gen.create_menu(
                 name="Choisis une histoire",
+                image=f"assets/{root.image_asset}" if root.image_asset else None,
                 audio=f"assets/{choose_audio_asset}" if choose_audio_asset else None,
             )
             # Auto-play + auto-transition (no wheel/ok on this node)
@@ -424,7 +425,13 @@ class PackBuilder:
             if node.children:
                 action = self.story_gen.create_action()
                 self.story_gen.link_node_to_action(menu, action)
-                
+                # Enable wheel scroll so the user can navigate between stories
+                menu.control_settings = {
+                    'wheel': True, 'ok': True, 'home': True,
+                    'pause': False, 'autoplay': False
+                }
+                menu.ok_option_index = -1  # -1 = wheel selection mode
+
                 for child in node.children:
                     # Pass 'action' as parent_menu_action so stories inside this folder
                     # know to return here (home_transition) when they end
