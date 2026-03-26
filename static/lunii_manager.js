@@ -321,14 +321,24 @@
     // ─── Pack Metadata ───────────────────────────────────────────────────────
 
     async function getPackMetadata(handle, uuid) {
+        const ref = uuidToRef(uuid);
+        // Try YAML 'md' file first (written by our app during installation)
         try {
-            const ref = uuidToRef(uuid);
             const mdHandle = await getFileHandle(handle, `.content/${ref}/md`);
             const text = await readFileAsText(mdHandle);
-            return parseSimpleYaml(text);
-        } catch {
-            return null;
-        }
+            // Only parse if it looks like YAML text (binary md starts with non-printable bytes)
+            if (/^[\x20-\x7E\n\r\t]/.test(text) && text.includes(':')) {
+                const parsed = parseSimpleYaml(text);
+                if (parsed.title) return parsed;
+            }
+        } catch { /* no md or binary */ }
+        // Try 'title.txt' fallback (also written by our app)
+        try {
+            const titleHandle = await getFileHandle(handle, `.content/${ref}/title.txt`);
+            const title = (await readFileAsText(titleHandle)).trim();
+            if (title) return { title };
+        } catch { /* no title.txt */ }
+        return null;
     }
 
     async function loadAllPacks(handle) {
@@ -336,10 +346,11 @@
         const results = [];
         for (const uuid of uuids) {
             const metadata = await getPackMetadata(handle, uuid);
+            const ref = uuidToRef(uuid);
             results.push({
                 uuid,
-                ref: uuidToRef(uuid),
-                title: metadata?.title || 'Pack sans titre',
+                ref,
+                title: metadata?.title || `Pack ${ref}`,
                 description: metadata?.description || '',
                 packType: metadata?.packType || 'unknown'
             });
@@ -489,6 +500,18 @@
                 } catch (e) {
                     console.warn('V3 BT not found, skipping:', e);
                 }
+            }
+
+            // Write YAML metadata for our app's manager (so titles show up on reload)
+            if (packTitle && packTitle !== 'Pack installé') {
+                const yamlLines = [
+                    `title: ${packTitle}`,
+                    `uuid: ${packUuid || ''}`,
+                    `packType: archive`,
+                    `installedBy: StudioPackGenerator`
+                ];
+                const mdYaml = new TextEncoder().encode(yamlLines.join('\n') + '\n');
+                await writeFile(packDir, 'md', mdYaml, true);
             }
 
             // Add UUID to pack index
