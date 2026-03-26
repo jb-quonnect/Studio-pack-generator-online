@@ -52,7 +52,7 @@ class StageNode:
             "type": self.type,
             "name": self.name,
         }
-        
+
         if self.image:
             result["image"] = self.image
         if self.audio:
@@ -60,15 +60,44 @@ class StageNode:
         if self.story_audio:
             result["storyAudio"] = self.story_audio
         if self.ok_transition:
-            ok_trans = {"actionNode": self.ok_transition}
-            if self.ok_option_index is not None:
-                ok_trans["optionIndex"] = self.ok_option_index
+            ok_trans = {
+                "actionNode": self.ok_transition,
+                # STUdio reads optionIndex unconditionally — always emit it
+                "optionIndex": self.ok_option_index if self.ok_option_index is not None else 0
+            }
             result["okTransition"] = ok_trans
         if self.home_transition:
-            result["homeTransition"] = {"actionNode": self.home_transition}
+            # STUdio reads optionIndex unconditionally → must always be present
+            result["homeTransition"] = {
+                "actionNode": self.home_transition,
+                "optionIndex": 0
+            }
+
+        # STUdio's ArchiveStoryPackReader reads controlSettings WITHOUT null-check.
+        # Every node must have it — use explicit settings or derive a safe default.
         if self.control_settings:
             result["controlSettings"] = self.control_settings
-        
+        else:
+            # Derive default from node type and transitions
+            has_ok = bool(self.ok_transition)
+            if self.type in ('entrypoint', 'cover'):
+                result["controlSettings"] = {
+                    'wheel': True, 'ok': True, 'home': False,
+                    'pause': False, 'autoplay': False
+                }
+            elif self.type == 'story' or (not has_ok):
+                # Terminal/playback node: autoplay, pause, home only
+                result["controlSettings"] = {
+                    'wheel': False, 'ok': False, 'home': True,
+                    'pause': True, 'autoplay': True
+                }
+            else:
+                # Navigation/menu node
+                result["controlSettings"] = {
+                    'wheel': True, 'ok': True, 'home': True,
+                    'pause': False, 'autoplay': False
+                }
+
         return result
 
 
