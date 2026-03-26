@@ -227,9 +227,18 @@ def render_pack_editor(pack: StoryPack, story_json_path: str):
     # Display editable nodes
     for i, node in enumerate(nodes):
         if node['type'] == 'entrypoint':
-            # Root node - just show as header
-            st.markdown(f"**📦 {node['name']}**")
+            # Pack cover — show as header with image edit button
+            col_icon, col_name, col_img = st.columns([0.3, 3, 0.4])
+            with col_icon:
+                st.markdown("📦")
+            with col_name:
+                st.markdown(f"**{node['name']}** *(couverture du pack)*")
+            with col_img:
+                if st.button("🖼️", key=f"img_{node['uuid']}", help="Modifier l'image de couverture du pack"):
+                    st.session_state.editing_image_uuid = node['uuid']
+                    st.rerun()
             continue
+
         
         indent = "│  " * (node['depth'] - 1) + "├─ " if node['depth'] > 0 else ""
         icon = "📁" if node['has_children'] else "📖"

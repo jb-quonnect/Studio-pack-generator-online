@@ -463,16 +463,47 @@ def render_file_upload():
     # Optional images
     st.markdown("---")
     st.markdown("#### 🖼️ Images (optionnel)")
-    
+    st.caption(
+        "Pour associer une image à une histoire, nommez le fichier image exactement comme le fichier audio "
+        "correspondant, avec l'extension `.item.png`.\n\n"
+        "**Exemple :** pour `mon_histoire.mp3`, uploadez `mon_histoire.item.png`\n\n"
+        "Une image non associée à un fichier audio sera ignorée. "
+        "Vous pouvez aussi modifier les images après génération dans l'onglet **✏️ Modifier**."
+    )
+
     image_files = st.file_uploader(
-        "Ajoutez des images pour personnaliser les menus",
+        "Images associées aux histoires (convention: nom_audio.item.png)",
         type=['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'],
         accept_multiple_files=True,
         key='image_files'
     )
-    
+
     if image_files:
         st.info(f"📷 {len(image_files)} image(s) chargée(s)")
+        with st.expander("Voir les images chargées", expanded=False):
+            for img_f in image_files:
+                base = os.path.splitext(img_f.name)[0]
+                if img_f.name.endswith('.item.png') or img_f.name.endswith('.item.jpg'):
+                    st.success(f"  ✅ {img_f.name} → sera associée à `{base.replace('.item', '')}.mp3`")
+                else:
+                    st.warning(f"  ⚠️ {img_f.name} → ne sera pas associée (renommez en `{os.path.splitext(img_f.name)[0]}.item.png`)")
+
+    # Pack cover image
+    st.markdown("---")
+    st.markdown("#### 🎨 Image de couverture du pack (optionnel)")
+    st.caption("Cette image s'affiche sur l'écran de la Lunii à l'ouverture du pack.")
+    cover_image = st.file_uploader(
+        "Image de couverture",
+        type=['png', 'jpg', 'jpeg', 'bmp'],
+        key='cover_image_file'
+    )
+    if cover_image:
+        from PIL import Image as PILImage
+        img = PILImage.open(cover_image)
+        st.image(img, caption="Couverture", width=200)
+        # Store in session state for use during generation
+        st.session_state['pack_cover_image'] = cover_image
+
     
     # Pack settings
     st.markdown("---")
@@ -1028,20 +1059,30 @@ def generate_pack_from_files(audio_files, image_files):
                 path = os.path.join(input_folder, img.name)
                 with open(path, 'wb') as f:
                     f.write(img.getbuffer())
-    
+
+        # Save pack cover image if provided
+        cover_image_path = None
+        cover_file = st.session_state.get('pack_cover_image')
+        if cover_file:
+            cover_image_path = os.path.join(session.session.input_dir, f"_cover_{cover_file.name}")
+            with open(cover_image_path, 'wb') as f:
+                f.write(cover_file.getbuffer())
+
     # Parse folder to tree
     tree = parse_folder_to_tree(input_folder)
     if not tree:
         st.error("❌ Erreur lors de la création de la structure")
         return
-    
+
     # Wrap in a root node with pack title
     root = TreeNode(
         name=st.session_state.pack_title,
         path=input_folder,
         is_folder=True,
-        children=[tree] if tree.is_folder else [tree]
+        children=[tree] if tree.is_folder else [tree],
+        item_image=cover_image_path  # Pack cover image (entrypoint node)
     )
+
     
     # Build options
     options = BuildOptions(
