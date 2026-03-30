@@ -704,9 +704,9 @@ def render_rss_input():
 
         # Pack settings
         st.markdown("---")
-        st.session_state.pack_title = feed.title
+        if st.session_state.get('pack_title', 'Mon Pack') == 'Mon Pack':
+            st.session_state.pack_title = feed.title
         render_pack_settings(key_prefix="rss")
-
         # Action buttons
         st.markdown("---")
         col_chap, col_gen = st.columns(2)
@@ -756,6 +756,11 @@ def _render_chapter_editor():
     unassigned = [ep for ep in all_selected if (ep.guid or ep.title) not in assigned_guids]
 
     st.markdown(f"### 📚 Organiser en chapitres — *{feed.title}*")
+
+    # Pack settings (always visible)
+    st.markdown("---")
+    render_pack_settings(key_prefix="rss_chapters")
+    st.markdown("---")
 
     # Auto-organize toolbar
     with st.container(border=True):

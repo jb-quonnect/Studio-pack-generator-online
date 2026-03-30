@@ -375,10 +375,10 @@ class PackBuilder:
                 image=f"assets/{root.image_asset}" if root.image_asset else None,
                 audio=f"assets/{choose_audio_asset}" if choose_audio_asset else None,
             )
-            # Auto-play + auto-transition (no wheel/ok on this node)
+            # Enable wheel+ok so the user can actually pick a branch!
             choose_node.control_settings = {
-                'wheel': False, 'ok': False, 'home': True,
-                'pause': False, 'autoplay': True
+                'wheel': True, 'ok': True, 'home': True,
+                'pause': False, 'autoplay': False
             }
             
             # Entrypoint → action1 (1 option: choose_node)
