@@ -341,18 +341,71 @@
         return null;
     }
 
+    let luniiStoreDbCache = null;
+
+    async function fetchLuniiStoreDb() {
+        if (luniiStoreDbCache) return luniiStoreDbCache;
+        try {
+            console.log("Fetching DB from Lunii Store API...");
+            const authRes = await fetch("https://server-auth-prod.lunii.com/guest/create", { method: 'GET' });
+            if (!authRes.ok) throw new Error("Guest auth failed");
+            const authData = await authRes.json();
+            const token = authData.response.token.server;
+
+            const packsRes = await fetch("https://server-data-prod.lunii.com/v2/packs", {
+                headers: { "X-AUTH-TOKEN": token }
+            });
+            if (!packsRes.ok) throw new Error("Packs fetch failed");
+            const packsData = await packsRes.json();
+            
+            luniiStoreDbCache = {};
+            const list = Object.values(packsData.response);
+            for (const entry of list) {
+                luniiStoreDbCache[entry.uuid] = {
+                    title: entry.localized_infos?.fr_FR?.title || entry.title,
+                    description: entry.localized_infos?.fr_FR?.description || entry.description
+                };
+            }
+            console.log(`Lunii Store DB loaded: ${Object.keys(luniiStoreDbCache).length} packs.`);
+            return luniiStoreDbCache;
+        } catch (e) {
+            console.warn("Could not fetch Lunii Store DB:", e);
+            luniiStoreDbCache = {}; // Cache empty to avoid retrying continuously
+            return luniiStoreDbCache;
+        }
+    }
+
     async function loadAllPacks(handle) {
         const uuids = await getPackUuids(handle);
         const results = [];
+        
+        // Attempt to load official metadata cache asynchronously
+        await fetchLuniiStoreDb();
+        
         for (const uuid of uuids) {
             const metadata = await getPackMetadata(handle, uuid);
             const ref = uuidToRef(uuid);
+            
+            let title = metadata?.title;
+            let description = metadata?.description || '';
+            let packType = metadata?.packType || 'unknown';
+            
+            // Check Lunii Store if no local title found
+            if (!title && luniiStoreDbCache && luniiStoreDbCache[uuid]) {
+                title = luniiStoreDbCache[uuid].title;
+                if (!description) description = luniiStoreDbCache[uuid].description;
+                if (packType === 'unknown') packType = 'lunii_official';
+            }
+            
+            // Fallback
+            if (!title) title = `Pack ${ref}`;
+
             results.push({
                 uuid,
                 ref,
-                title: metadata?.title || `Pack ${ref}`,
-                description: metadata?.description || '',
-                packType: metadata?.packType || 'unknown'
+                title,
+                description,
+                packType
             });
         }
         return results;
