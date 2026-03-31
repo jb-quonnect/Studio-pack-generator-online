@@ -413,12 +413,12 @@ class PackBuilder:
             return
         
         if node.is_folder:
-            # Create menu node
             menu = self.story_gen.create_menu(
                 name=node.display_name,
                 image=f"assets/{node.image_asset}" if node.image_asset else None,
                 audio=f"assets/{node.nav_audio_asset}" if node.nav_audio_asset else None,
-                parent_action_id=parent_action.id
+                parent_action_id=parent_action.id,
+                home_action_id=parent_menu_action.id if parent_menu_action else None
             )
             
             # If has children, create action and process them

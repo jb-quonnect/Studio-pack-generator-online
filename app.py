@@ -673,6 +673,17 @@ def render_rss_input():
         total = len(feed.episodes)
         st.markdown(f"#### 📋 Sélection des épisodes ({total} disponibles)")
 
+        # Options de tri et préfixe
+        col_sort, col_prefix = st.columns(2)
+        with col_sort:
+            sort_chrono = st.toggle("Trier par ordre chronologique", value=st.session_state.get("rss_sort_chrono", False), key="rss_sort_chrono_toggle")
+            if sort_chrono != st.session_state.get("rss_sort_chrono", False):
+                st.session_state.rss_sort_chrono = sort_chrono
+                st.rerun()
+                
+        with col_prefix:
+            st.session_state.rss_prefix_ep_num = st.toggle("Annoncer 'Épisode X'", help="Ajoute 'Épisode X - ' devant le titre pour la voix et l'image", value=st.session_state.get("rss_prefix_ep_num", True), key="rss_prefix_toggle")
+
         # Select / Deselect All
         col_sa, col_da = st.columns(2)
         with col_sa:
@@ -688,8 +699,12 @@ def render_rss_input():
 
         # Show all episodes (no limit)
         selected_episodes = []
+        display_episodes = list(enumerate(feed.episodes))
+        if st.session_state.get("rss_sort_chrono", False):
+            display_episodes.reverse()
+            
         with st.container():
-            for i, ep in enumerate(feed.episodes):
+            for i, ep in display_episodes:
                 duration_str = f" ({ep.duration // 60:.0f} min)" if ep.duration else ""
                 selected = st.checkbox(
                     f"{ep.title}{duration_str}",
@@ -1271,18 +1286,24 @@ def generate_pack_from_rss(feed: RssFeed, selected_episodes: list, chapters: lis
         item_image=feed_image_path
     )
 
-    def make_story_node(ep):
+    def make_story_node(ep, index=None):
         """Return a story TreeNode for a downloaded episode, or None if not downloaded."""
         if not ep.audio_path:
             return None
+            
+        name = clean_name(ep.title)
+        if index is not None and st.session_state.get("rss_prefix_ep_num", True):
+            name = f"Épisode {index} - {name}"
+            
         return TreeNode(
-            name=clean_name(ep.title),
+            name=name,
             path=ep.audio_path,
             is_folder=False,
             audio_file=ep.audio_path,
             item_image=ep.image_path
         )
 
+    global_ep_index = 1
     if chapters:
         # ── Chaptered mode ────────────────────────────────────────────────────
         for ch in chapters:
@@ -1302,18 +1323,20 @@ def generate_pack_from_rss(feed: RssFeed, selected_episodes: list, chapters: lis
                 item_image=ch_image
             )
             for ep in ch_eps:
-                story = make_story_node(ep)
+                story = make_story_node(ep, global_ep_index)
                 if story:
                     ch_node.children.append(story)
+                    global_ep_index += 1
             
             if ch_node.children:
                 root.children.append(ch_node)
     else:
         # ── Flat mode (no chapters) ───────────────────────────────────────────
         for ep in eps_to_download:
-            story = make_story_node(ep)
+            story = make_story_node(ep, global_ep_index)
             if story:
                 root.children.append(story)
+                global_ep_index += 1
     
     if not root.children:
         st.error("❌ Aucun épisode n'a pu être téléchargé")

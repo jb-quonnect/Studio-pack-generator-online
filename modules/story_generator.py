@@ -223,7 +223,8 @@ class StoryGenerator:
         name: str,
         image: Optional[str] = None,
         audio: Optional[str] = None,
-        parent_action_id: Optional[str] = None
+        parent_action_id: Optional[str] = None,
+        home_action_id: Optional[str] = None
     ) -> StageNode:
         """
         Create a menu node.
@@ -233,6 +234,7 @@ class StoryGenerator:
             image: Asset path for image
             audio: Asset path for audio
             parent_action_id: ID of parent ActionNode to link to
+            home_action_id: ID of ActionNode for the home transition
             
         Returns:
             Created StageNode
@@ -244,6 +246,9 @@ class StoryGenerator:
             image=image,
             audio=audio
         )
+        
+        if home_action_id:
+            node.home_transition = home_action_id
         
         self.pack.stage_nodes.append(node)
         self._node_map[node.uuid] = node
