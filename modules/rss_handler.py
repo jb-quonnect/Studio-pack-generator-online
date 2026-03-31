@@ -158,6 +158,13 @@ def parse_rss_feed(url: str, existing_title: Optional[str] = None, existing_imag
             episode = parse_episode(entry, rss_feed.image_url)
             if episode:
                 rss_feed.episodes.append(episode)
+                
+        # Auto-assign chronological numbers to episodes if they lack one
+        # Feed is generally newest-first. So index 0 is the newest (total).
+        total_eps = len(rss_feed.episodes)
+        for i, ep in enumerate(rss_feed.episodes):
+            if not ep.episode_number:
+                ep.episode_number = str(total_eps - i)
         
         logger.info(f"Parsed {len(rss_feed.episodes)} episodes from {rss_feed.title}")
         return rss_feed

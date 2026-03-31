@@ -375,10 +375,10 @@ class PackBuilder:
                 image=f"assets/{root.image_asset}" if root.image_asset else None,
                 audio=f"assets/{choose_audio_asset}" if choose_audio_asset else None,
             )
-            # Enable wheel+ok so the user can actually pick a branch!
+            # Auto-play "Choisis une histoire" and auto-transition to the wheel of branches
             choose_node.control_settings = {
-                'wheel': True, 'ok': True, 'home': True,
-                'pause': False, 'autoplay': False
+                'wheel': False, 'ok': False, 'home': True,
+                'pause': False, 'autoplay': True
             }
             
             # Entrypoint → action1 (1 option: choose_node)
@@ -394,8 +394,8 @@ class PackBuilder:
             
             # Process children into the menu action
             for child in root.children:
-                # action_menu is the selection wheel — stories return here after ending
-                self._build_node(child, action_menu, parent_menu_action=action_menu)
+                # Top level return goes to action_entry (which returns to 'Choisis une histoire' node)
+                self._build_node(child, action_menu, parent_menu_action=action_entry)
         
         return True
     
@@ -431,11 +431,14 @@ class PackBuilder:
                     'pause': False, 'autoplay': False
                 }
                 menu.ok_option_index = -1  # -1 = wheel selection mode
+                
+                # Dedicated action back to THIS menu, so children can return here
+                action_back_to_menu = self.story_gen.create_action([menu.uuid])
 
                 for child in node.children:
-                    # Pass 'action' as parent_menu_action so stories inside this folder
+                    # Pass 'action_back_to_menu' so stories inside this folder
                     # know to return here (home_transition) when they end
-                    self._build_node(child, action, parent_menu_action=action, depth=depth + 1)
+                    self._build_node(child, action, parent_menu_action=action_back_to_menu, depth=depth + 1)
         
         else:
             # Create story node with navigation audio and story audio
