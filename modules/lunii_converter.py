@@ -508,6 +508,18 @@ def generate_ni(stage_nodes: List[Dict], action_nodes: List[Dict],
                 home_enabled = 1 if has_home else 0
                 pause_enabled, autoplay_enabled = 0, 0
 
+        # SAFETY NET: on the device, an AUTOPLAY node auto-triggers its OK transition
+        # when the audio ends. If autoplay is on but there is no OK transition
+        # (offset 8 == -1), the firmware follows a null transition and crashes
+        # (error icon). Disable autoplay in that case so playback simply stops.
+        ok_transition_pos = struct.unpack_from('<i', node_buf, 8)[0]
+        if autoplay_enabled and ok_transition_pos == -1:
+            logger.warning(
+                f"Stage node '{node.get('uuid', '?')}' has autoplay but no OK transition; "
+                f"disabling autoplay to prevent device crash at end of audio."
+            )
+            autoplay_enabled = 0
+
         struct.pack_into('<h', node_buf, 32, wheel_enabled)
         struct.pack_into('<h', node_buf, 34, ok_enabled)
         struct.pack_into('<h', node_buf, 36, home_enabled)
@@ -857,6 +869,13 @@ class LuniiPackConverter:
                 }
                 expanded_stages.append(announce_node)
 
+                # Determine where to return when the episode ends or HOME is pressed.
+                # The original story node's homeTransition points to its parent (chapter)
+                # menu; fall back to the root menu, matching official packs which always
+                # bring the child back to a menu after an episode.
+                orig_home = node.get('homeTransition') or {}
+                return_action_id = orig_home.get('actionNode') or root_action_id
+
                 # 2. Playback node: full story audio, no image, autoplay + pause
                 playback_node = {
                     'uuid': playback_uuid,
@@ -864,19 +883,30 @@ class LuniiPackConverter:
                     'name': node.get('name', '') + ' (playback)',
                     'audio': story_audio,  # Full story audio
                     # No image (firmware shows nothing or uses parent)
-                    'okTransition': None,
                     'controlSettings': {
                         'wheel': False, 'ok': False, 'home': True,
                         'pause': True, 'autoplay': True
                     }
                 }
 
-                # Add homeTransition back to the root menu if we know it
-                if root_action_id:
-                    playback_node['homeTransition'] = {
-                        'actionNode': root_action_id,
+                if return_action_id:
+                    # CRITICAL: an autoplay node auto-triggers its OK transition when the
+                    # audio ends. Leaving okTransition null here makes the Lunii crash
+                    # (error icon) at the end of every episode. Point OK (end-of-audio)
+                    # and HOME back to the parent menu, as official packs do.
+                    playback_node['okTransition'] = {
+                        'actionNode': return_action_id,
                         'optionIndex': 0
                     }
+                    playback_node['homeTransition'] = {
+                        'actionNode': return_action_id,
+                        'optionIndex': 0
+                    }
+                else:
+                    # No menu to return to: disable autoplay so the firmware does not
+                    # follow a null OK transition when the audio ends.
+                    playback_node['okTransition'] = None
+                    playback_node['controlSettings']['autoplay'] = False
 
                 expanded_stages.append(playback_node)
 

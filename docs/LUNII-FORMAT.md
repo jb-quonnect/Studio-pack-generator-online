@@ -7,7 +7,9 @@ Document de référence sur la construction d'un pack Lunii, issu de l'étude cr
 - **olup/lunii-admin-web** (chiffrement, `bt`, index) ;
 - l'**analyse en lecture seule d'une vraie Lunii V2** (54 packs : 2 officiels natifs, ~22 officiels transférés, ~29 communautaires, 1 généré par cette appli).
 
-> Résumé exécutif : le convertisseur actuel produit un pack **techniquement valide** (vérifié octet par octet sur l'appareil). Le format ci-dessous est correct. Les points d'attention restants sont des **divergences avec la référence** (dédoublonnage, silence ajouté, blank MP3) qui ne cassent pas le pack mais méritent d'être connues. Voir [§7](#7-diagnostic-du-pack-généré-par-lappli) et [§8](#8-divergences-connues-avec-la-référence).
+> Résumé exécutif : le format ci-dessous (structure, index, chiffrement, assets) est correct dans le convertisseur. **Un bug de navigation provoquait un crash (icône erreur) à la fin de chaque épisode** : les nœuds de lecture avaient AUTOPLAY activé mais **aucune transition OK**, or le firmware déclenche automatiquement la transition OK en fin d'audio → transition nulle → crash. Corrigé (voir [§7](#7-diagnostic-du-pack-généré-par-lappli-et-correctif)). Autres points d'attention : **divergences avec la référence** (dédoublonnage, silence ajouté, blank MP3), non bloquantes — voir [§8](#8-divergences-connues-avec-la-référence).
+>
+> **Règle d'or à ne jamais violer : tout nœud avec `autoplay = true` DOIT avoir une transition OK valide** (offset 8 du nœud `ni` ≠ -1). Vérifié sur tous les packs officiels et communautaires.
 
 ---
 
@@ -152,20 +154,43 @@ C'est exactement le schéma que produit l'expansion `storyAudio` du convertisseu
 
 ---
 
-## 7. Diagnostic du pack généré par l'appli
+## 7. Diagnostic du pack généré par l'appli, et correctif
 
-Pack testé : `B14E6B99` (« Les aventures de Tina », `installedBy: StudioPackGenerator`), 65 nœuds / 35 images / 65 sons.
+Packs concernés : `B14E6B99` (« Les aventures de Tina ») et « La discomobile » — même symptôme : **crash avec icône « error » à la fin de la lecture d'un épisode**.
 
-**Tous les contrôles vérifiables passent :**
+### Ce qui est correct
 
 - en-tête `ni` cohérent (fmt=1, offset=512, nsize=44, factory=1) ;
-- `rf = imgcount = ri = 35` et `sf = sndcount = si = 65` (aucun décalage) ;
-- **aucun index hors bornes** (image/son/li/optionIndex tous valides) ;
-- structure de navigation cohérente (entrée → menu 3 chapitres → menus 10 histoires → annonce → playback, avec `homeTransition` de retour) ;
-- `bt` **identique** au recalcul `XXTEA(ri_chiffré[:64], specificKey_appareil)` ✓ ;
-- assets BMP et MP3 au bon format.
+- comptages cohérents (`rf = imgcount = ri`, `sf = sndcount = si`), aucun index hors bornes ;
+- `bt` identique au recalcul `XXTEA(ri_chiffré[:64], specificKey_appareil)` ✓ ;
+- assets BMP (4-bit RLE 320×240) et MP3 (mono 44100Hz sans ID3) au bon format.
 
-**Conclusion** : le pack est techniquement valide et devrait être visible/jouable. Le symptôme « invisible / plantage » rapporté provient très probablement d'un **build antérieur** aux correctifs récents (controlSettings/optionIndex/expansion storyAudio/`optionIndex=-1` sur l'entrypoint). ➡️ **Action recommandée : régénérer et réinstaller le pack avec la version actuelle, puis retester sur l'appareil.**
+### La cause du crash (confirmée)
+
+Les **nœuds de lecture** (playback) issus de l'expansion `storyAudio` avaient :
+
+```
+flags : W0 O0 H1 P1 A1   (autoplay activé)
+okTransition : -1         ← AUCUNE transition OK
+homeTransition : → menu racine
+```
+
+Sur l'appareil, **AUTOPLAY signifie « déclencher automatiquement la transition OK à la fin de l'audio »**. Avec `okTransition = -1`, le firmware suit une transition nulle en fin d'épisode → **icône erreur / crash**. Comparaison sans appel (nœuds autoplay `00111` / `01101`) :
+
+| Pack | Nœud de lecture (autoplay) | Transition OK |
+|------|----------------------------|---------------|
+| Officiel `F3C18541` (Douce Nuit) | oui | `ok(17,1,0)` ✓ |
+| Officiel `10880D15` | oui | `ok(43,1,0)`… ✓ |
+| Communautaire `03507E09` | oui | `ok(5,1,0)` ✓ |
+| **App (avant correctif)** | oui | **`ok(-1,-1,-1)` ✗ → crash** |
+
+> ⚠️ Le premier script de diagnostic ne testait pas cette règle et avait conclu à tort « aucun problème ». Le défaut était bien réel et présent dans les packs générés.
+
+### Correctif appliqué
+
+Dans l'expansion `storyAudio` de [lunii_converter.py](../modules/lunii_converter.py), le nœud de lecture reçoit désormais une **transition OK vers le menu parent** (repris du `homeTransition` d'origine du nœud d'histoire, sinon menu racine), en plus du `homeTransition` — exactement le schéma des packs officiels. Filet de sécurité universel ajouté dans `generate_ni()` : si un nœud a `autoplay` sans transition OK, l'autoplay est **désactivé** (log d'alerte) pour empêcher tout crash, quelle que soit l'origine du story.json.
+
+**Vérification de bout en bout** : conversion réelle d'un pack Studio à 7 épisodes → 8 nœuds autoplay, **tous avec transition OK valide** (`ok(0,1,0)` → menu), 0 violation. ➡️ **Régénérer et réinstaller les packs avec cette version pour corriger le crash.**
 
 ---
 
