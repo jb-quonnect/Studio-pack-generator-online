@@ -34,3 +34,20 @@ models/*.onnx
 
 # Session files
 .streamlit/sessions/
+
+# Packs et fichiers de test locaux (racine)
+/*.zip
+/story.json
+/test.py
+/test_out.txt
+/studio_repo_tmp/
+
+# Sorties de diagnostic
+/debug_output.txt
+/diag*.txt
+/*_result.txt
+/*_output.txt
+/our_nodes.txt
+
+# Config locale Claude Code
+.claude/
