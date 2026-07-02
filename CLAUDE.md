@@ -46,7 +46,17 @@ Flux global : **entrée (RSS / fichiers / ZIP) → arbre de navigation → conve
 
 - [SPECIFICATIONS.md](SPECIFICATIONS.md) — Spécifications fonctionnelles héritées du projet jersou : format du story.json, algorithmes audio/images, logique TTS, extraction inverse.
 - [SPECIFICATIONS-lunii-admin-web.md](SPECIFICATIONS-lunii-admin-web.md) — Format Lunii natif et transfert vers l'appareil.
+- **[docs/LUNII-FORMAT.md](docs/LUNII-FORMAT.md) — Référence technique complète du format Lunii natif** (issue de l'étude croisée code actuel / STUdio Java / lunii-admin-web / analyse d'une vraie Lunii V2). À lire avant toute modification de [lunii_converter.py](modules/lunii_converter.py) ou [lunii_manager.js](static/lunii_manager.js).
 - Structure d'un pack Studio : `story.json` + `thumbnail.png` + `assets/` (images 320x240, MP3). La cohérence des `controlSettings` et `optionIndex` entre nœuds de menu, nœuds d'annonce et nœuds d'histoire est critique pour la navigation réelle sur Lunii (le simulateur ne reproduit pas tous les comportements de l'appareil).
+
+### Format Lunii — points critiques (résumé, détails dans docs/LUNII-FORMAT.md)
+
+- **Deux formes** : bibliothèque (assets en clair) vs appareil (premier bloc de 512 o de chaque fichier chiffré). Le convertisseur génère directement la **forme appareil**.
+- **Structure pack** : `.content/REF/` avec `ni` (nodes, **en clair**, en-tête 512 o + nœuds 44 o), `li`/`ri`/`si` (index, 1er bloc chiffré), `rf/`/`sf/` (BMP 4-bit RLE 320×240 / MP3 mono 44100Hz sans ID3, 1er bloc chiffré), `bt` (boot). REF = 8 derniers hex de l'UUID en majuscules.
+- **Chiffrement V2** : XXTEA clé commune ; piège d'endianness — **données en little-endian, clé en big-endian**. Le `bt` = `XXTEA(ri_chiffré[:64], specificKey_de_l'appareil)` → il est **régénéré à l'installation par le JS** (clé propre à l'appareil, pas au pack). Appareils : `.md` offset 0 = 1/3 → V2, 6/7 → V3 (AES).
+- **`.pi`** à la racine = liste brute des UUID (16 o chacun) des packs installés ; un pack absent du `.pi` est invisible. **`factory=1`** dans l'en-tête `ni` évite l'inspection par l'appli officielle.
+- **État vérifié (juillet 2026)** : le convertisseur actuel produit un pack **techniquement valide** (contrôlé octet par octet sur une Lunii V2 — index, BMP, MP3, bt tous corrects). Les plantages historiques venaient de `controlSettings`/`optionIndex` incohérents, corrigés. Divergences résiduelles avec la référence Java (non bloquantes) : pas de dédoublonnage SHA1 des assets, 1 s de silence ajoutée à chaque audio, `BLANK_MP3` minuscule non validé, bitrate 128k au lieu de 64k.
+- **⚠️ Ne jamais écrire sur `.pi`/`.cfg`/`.md` d'un appareil branché** hors du flux d'installation testé : risque de brique.
 
 ## Conventions locales
 
