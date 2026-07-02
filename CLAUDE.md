@@ -59,6 +59,10 @@ Flux global : **entrée (RSS / fichiers / ZIP) → arbre de navigation → conve
 - **État vérifié (juillet 2026)** : structure/index/BMP/MP3/bt corrects (contrôlés octet par octet sur une Lunii V2 et par conversion réelle). Divergences résiduelles avec la référence Java (non bloquantes) : pas de dédoublonnage SHA1 des assets, 1 s de silence ajoutée à chaque audio, `BLANK_MP3` minuscule non validé, bitrate 128k au lieu de 64k.
 - **⚠️ Ne jamais écrire sur `.pi`/`.cfg`/`.md` d'un appareil branché** hors du flux d'installation testé : risque de brique.
 
+## Pièges connus
+
+- **Téléchargements volumineux** : ne pas utiliser `st.download_button` pour les packs — il embarque tout le ZIP en base64 dans la page (via le websocket) et **fige le navigateur** sur les gros packs au clic. Utiliser le helper `serve_download_link()` d'[app.py](app.py), qui écrit le fichier sous `static/downloads/` (service de fichiers statiques Streamlit activé dans [.streamlit/config.toml](.streamlit/config.toml)) et rend un lien HTTP `<a download>` normal. Fichiers nommés par hash de contenu et nettoyés après 1 h.
+
 ## Conventions locales
 
 - Machine de dev : Windows 11 ; la prod tourne sous Linux (Docker/Nixpacks). Attention aux différences de chemins et à la disponibilité de Piper.
