@@ -2,6 +2,12 @@
 port = 8501
 address = "0.0.0.0"
 headless = true
+# Serve generated packs as real HTTP downloads (static/downloads/) instead of
+# embedding them in the page — st.download_button freezes the browser on large packs.
+enableStaticServing = true
+# Allow large packs over the websocket / uploads (values in MB).
+maxMessageSize = 500
+maxUploadSize = 500
 
 [theme]
 primaryColor = "#FF6B35"

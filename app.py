@@ -18,6 +18,7 @@ import os
 import tempfile
 import shutil
 import logging
+import time
 import zipfile
 import subprocess
 from pathlib import Path
@@ -164,6 +165,50 @@ def track_event(event_name: str, data: dict = None):
     </script>
     """
     components.html(js, height=0)
+
+
+def serve_download_link(label: str, filename: str, data: bytes):
+    """Render a download as a real HTTP link served by Streamlit static serving.
+
+    st.download_button embeds the whole payload into the page (base64 over the
+    websocket), which makes the browser hang/freeze on large packs. Instead we
+    write the bytes under static/downloads/ and render a normal <a download> link
+    that the browser streams directly. The served file name is content-addressed
+    (sha1) so regenerating a pack yields a fresh link automatically.
+    """
+    import hashlib
+    import html
+
+    downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "downloads")
+    os.makedirs(downloads_dir, exist_ok=True)
+
+    # Best-effort cleanup of files older than 1h to avoid unbounded growth.
+    now = time.time()
+    for old in os.listdir(downloads_dir):
+        if old == ".gitkeep":
+            continue
+        old_path = os.path.join(downloads_dir, old)
+        try:
+            if now - os.path.getmtime(old_path) > 3600:
+                os.remove(old_path)
+        except OSError:
+            pass
+
+    digest = hashlib.sha1(data).hexdigest()[:16]
+    served_path = os.path.join(downloads_dir, f"{digest}.zip")
+    if not os.path.exists(served_path):
+        with open(served_path, "wb") as f:
+            f.write(data)
+
+    href = f"app/static/downloads/{digest}.zip"
+    safe_filename = html.escape(filename or "pack.zip", quote=True)
+    st.markdown(
+        f'<a href="{href}" download="{safe_filename}" '
+        f'style="display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;'
+        f'width:100%;padding:0.55rem 1rem;background:#FF6B35;color:#fff;border-radius:0.5rem;'
+        f'text-decoration:none;font-weight:600;box-sizing:border-box;">{label}</a>',
+        unsafe_allow_html=True,
+    )
 
 
 def init_session_state():
@@ -426,16 +471,12 @@ def render_generation_result():
             st.success(f"Pack prêt: **{st.session_state.output_pack_filename}**")
         
         with col2:
-            st.download_button(
+            serve_download_link(
                 "📥 Télécharger",
+                st.session_state.output_pack_filename,
                 st.session_state.output_zip_data,
-                file_name=st.session_state.output_pack_filename,
-                mime="application/zip",
-                type="primary",
-                use_container_width=True,
-                key="download_persistent"
             )
-        
+
         st.info("💡 Allez dans l'onglet 'Aperçu' pour tester la navigation avant de télécharger.")
 
 
@@ -1016,12 +1057,12 @@ def render_extract_mode():
                         )
                         
                         with open(extracted_zip, 'rb') as f:
-                            st.download_button(
-                                "📥 Télécharger le dossier extrait",
-                                f.read(),
-                                file_name=f"{info.get('pack_title', 'pack')}_extracted.zip",
-                                mime="application/zip"
-                            )
+                            extracted_bytes = f.read()
+                        serve_download_link(
+                            "📥 Télécharger le dossier extrait",
+                            f"{info.get('pack_title', 'pack')}_extracted.zip",
+                            extracted_bytes,
+                        )
                     else:
                         st.error("❌ Erreur lors de l'extraction")
         else:
@@ -1471,14 +1512,10 @@ def render_lunii_upload():
         # Already converted — show results
         st.success(f"✅ Pack Lunii prêt: **{st.session_state.lunii_zip_filename}**")
         
-        st.download_button(
+        serve_download_link(
             "📥 Télécharger le Pack Lunii",
+            st.session_state.lunii_zip_filename,
             st.session_state.lunii_zip_data,
-            file_name=st.session_state.lunii_zip_filename,
-            mime="application/zip",
-            type="primary",
-            use_container_width=True,
-            key="download_lunii"
         )
         st.caption("Téléchargez le pack, puis utilisez le gestionnaire ci-dessous pour l'installer sur votre Lunii.")
         
@@ -1716,14 +1753,10 @@ def main():
                 st.success(f"✅ Pack prêt: **{st.session_state.output_pack_filename}**")
                 st.caption("Votre pack Studio est prêt à être utilisé !")
             with col2:
-                st.download_button(
+                serve_download_link(
                     "📥 Télécharger le Pack",
+                    st.session_state.output_pack_filename,
                     st.session_state.output_zip_data,
-                    file_name=st.session_state.output_pack_filename,
-                    mime="application/zip",
-                    type="primary",
-                    use_container_width=True,
-                    key="download_main"
                 )
         # === SECTION 4: Upload Lunii ===
         with st.expander("🎧 4. Uploader dans ma Lunii", expanded=not st.session_state.get('lunii_conversion_complete')):

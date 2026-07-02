@@ -51,3 +51,7 @@ models/*.onnx
 
 # Config locale Claude Code
 .claude/
+
+# Packs générés servis en téléchargement (gardés éphémères)
+static/downloads/*
+!static/downloads/.gitkeep
