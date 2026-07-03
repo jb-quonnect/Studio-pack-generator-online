@@ -343,8 +343,13 @@ def convert_image_to_lunii_bmp(image_path: str) -> bytes:
 
 
 def convert_audio_to_lunii_mp3(audio_path: str, output_path: str) -> bool:
-    """Convert audio to Lunii-compatible MP3: 44100Hz, Mono, 128kbps, no ID3.
-    Prepends 1 second of silence to compensate for Lunii firmware audio truncation."""
+    """Convert audio to Lunii-compatible MP3: 44100Hz, Mono, 64kbps, no ID3.
+    Prepends 1 second of silence to compensate for Lunii firmware audio truncation.
+
+    64 kbps mono is the format recommended by the Lunii reference (STUdio /
+    lunii-admin-web): it matches official packs, and roughly halves pack size
+    versus 128 kbps — which matters because Streamlit static serving refuses to
+    serve files larger than 200 MB (see serve_download_link in app.py)."""
     try:
         result = subprocess.run([
             'ffmpeg', '-y',
@@ -355,7 +360,7 @@ def convert_audio_to_lunii_mp3(audio_path: str, output_path: str) -> bool:
             '-map', '[out]',
             '-ar', '44100',
             '-ac', '1',
-            '-b:a', '128k',
+            '-b:a', '64k',
             '-map_metadata', '-1',
             '-id3v2_version', '0',
             '-write_id3v1', '0',

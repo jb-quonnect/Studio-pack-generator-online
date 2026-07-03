@@ -14,6 +14,28 @@ Fonctionnalités:
 
 import streamlit as st
 import streamlit.components.v1 as components
+
+
+# Streamlit refuses to serve static files larger than 200 MB (hard-coded
+# MAX_APP_STATIC_FILE_SIZE → HTTP 404 "File is too large"). Big Lunii packs
+# exceed that, so raise the cap best-effort. This runs on every script exec,
+# i.e. before the user can reach a download link. Guarded: never breaks the app.
+def _raise_streamlit_static_limit(limit: int = 4 * 1024 * 1024 * 1024):
+    import importlib
+    for mod_name in (
+        "streamlit.web.server.starlette.starlette_routes",
+        "streamlit.web.server.starlette.starlette_server_config",
+        "streamlit.web.server.routes",  # older (tornado) layouts
+    ):
+        try:
+            mod = importlib.import_module(mod_name)
+            if hasattr(mod, "MAX_APP_STATIC_FILE_SIZE"):
+                mod.MAX_APP_STATIC_FILE_SIZE = limit
+        except Exception:
+            pass
+
+
+_raise_streamlit_static_limit()
 import os
 import tempfile
 import shutil
@@ -210,6 +232,14 @@ def serve_download_link(label: str, filename: str, data: bytes):
         logger.error(f"[download] failed to write {served_path}: {e}", exc_info=True)
         st.error(f"Erreur lors de la préparation du téléchargement : {e}")
         return
+
+    # If the raised static-serving cap did not take effect, files >200 MB would
+    # 404. Warn the user so a failed download is not a mystery.
+    if len(data) > 200 * 1024 * 1024:
+        st.caption(
+            f"⚠️ Ce fichier est volumineux ({len(data) // (1024 * 1024)} Mo). "
+            "Si le téléchargement échoue, réessayez ou contactez le support."
+        )
 
     href = f"app/static/downloads/{digest}.zip"
     safe_filename = html.escape(filename or "pack.zip", quote=True)

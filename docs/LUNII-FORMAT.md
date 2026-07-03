@@ -149,7 +149,7 @@ C'est exactement le schéma que produit l'expansion `storyAudio` du convertisseu
 ### Audio → MP3 mono 44100 Hz
 
 - Mono, 44100 Hz, **sans tags ID3** (le lecteur Java rejette tout ID3v1/ID3v2).
-- Référence Java : 64 kbps recommandé. Le convertisseur actuel exporte en **128 kbps** (le commentaire du code dit encore 64k — incohérence cosmétique).
+- Référence Java : 64 kbps recommandé. Le convertisseur exporte désormais en **64 kbps** (aligné sur la référence ; réduit aussi la taille des packs de moitié, ce qui évite la limite de 200 Mo du service statique Streamlit — voir CLAUDE.md « Pièges connus »).
 - Vérifié sur le pack de l'appli : sync MPEG valide, `id3=False`, en-tête `FF FB 90 C0` = MPEG1-L3 128k / 44100 / mono ✓.
 
 ---
