@@ -191,14 +191,25 @@ def serve_download_link(label: str, filename: str, data: bytes):
         try:
             if now - os.path.getmtime(old_path) > 3600:
                 os.remove(old_path)
+                logger.info(f"[download] cleaned old file {old_path}")
         except OSError:
             pass
 
     digest = hashlib.sha1(data).hexdigest()[:16]
     served_path = os.path.join(downloads_dir, f"{digest}.zip")
-    if not os.path.exists(served_path):
-        with open(served_path, "wb") as f:
-            f.write(data)
+    try:
+        if not os.path.exists(served_path):
+            with open(served_path, "wb") as f:
+                f.write(data)
+        logger.info(
+            f"[download] served '{filename}' -> {served_path} "
+            f"({len(data)} bytes) exists={os.path.exists(served_path)} "
+            f"size_on_disk={os.path.getsize(served_path) if os.path.exists(served_path) else 'MISSING'}"
+        )
+    except Exception as e:
+        logger.error(f"[download] failed to write {served_path}: {e}", exc_info=True)
+        st.error(f"Erreur lors de la préparation du téléchargement : {e}")
+        return
 
     href = f"app/static/downloads/{digest}.zip"
     safe_filename = html.escape(filename or "pack.zip", quote=True)
