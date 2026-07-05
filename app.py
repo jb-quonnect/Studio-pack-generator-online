@@ -261,6 +261,7 @@ def init_session_state():
         st.session_state.pack_title = "Mon Pack"
         st.session_state.pack_description = ""
         st.session_state.generation_complete = False
+        st.session_state.view = 'home'  # 'home' (choix) | 'create' | 'lunii'
         st.session_state.output_zip_path = None
         st.session_state.output_zip_data = None  # Store ZIP binary for persistence
         st.session_state.output_pack_filename = None  # Store filename
@@ -1501,11 +1502,15 @@ def render_simulator_tab():
             st.error("❌ Impossible de charger le pack pour l'édition")
 
 
-def render_lunii_upload():
-    """Affiche l'interface d'upload vers Lunii."""
-    
+def render_lunii_conversion():
+    """Convertit le pack de la session au format Lunii et propose le téléchargement.
+
+    Le gestionnaire d'appareil vit désormais dans la vue « Ma Lunii » ; ici on ne
+    fait que convertir + télécharger, avec un renvoi vers « Ma Lunii » pour installer.
+    """
+
     st.markdown("""
-    Convertissez votre pack au format natif Lunii pour le charger directement 
+    Convertissez votre pack au format natif Lunii pour le charger directement
     sur votre boîte à histoires.
     """)
     
@@ -1558,21 +1563,23 @@ def render_lunii_upload():
             st.session_state.lunii_zip_filename,
             st.session_state.lunii_zip_data,
         )
-        st.caption("Téléchargez le pack, puis utilisez le gestionnaire ci-dessous pour l'installer sur votre Lunii.")
-        
-        # Reconvert button
-        if st.button("🔄 Reconvertir", key="reconvert_lunii"):
-            st.session_state.lunii_conversion_complete = False
-            st.session_state.lunii_zip_data = None
-            st.session_state.lunii_zip_filename = None
-            st.rerun()
-        
-        st.markdown("---")
-        
-        # === Lunii Device Manager ===
-        st.subheader("🎧 Gestionnaire Lunii")
-        _render_lunii_manager()
-    
+        st.caption("Téléchargez le pack, puis installez-le sur votre appareil depuis l'onglet « Ma Lunii ».")
+
+        col_go, col_re = st.columns(2)
+        with col_go:
+            if st.button("🎧 Installer sur ma Lunii", type="primary",
+                         use_container_width=True, key="goto_lunii"):
+                # Hand the freshly converted pack to the "Ma Lunii" view for install.
+                st.session_state.lunii_pending_install = True
+                st.session_state.view = "lunii"
+                st.rerun()
+        with col_re:
+            if st.button("🔄 Reconvertir", use_container_width=True, key="reconvert_lunii"):
+                st.session_state.lunii_conversion_complete = False
+                st.session_state.lunii_zip_data = None
+                st.session_state.lunii_zip_filename = None
+                st.rerun()
+
     elif can_convert:
         if st.button("🎧 Convertir pour Lunii", type="primary", use_container_width=True, key="convert_lunii"):
             _run_lunii_conversion(version, aes_key, aes_iv)
@@ -1755,38 +1762,63 @@ def check_dependencies():
     return issues
 
 
-def main():
-    """Point d'entrée principal de l'application."""
-    # Initialisation
-    init_session_state()
-    
-    # Tracking Umami (analytics)
-    inject_umami_analytics()
-    
-    # En-tête
-    render_header()
-    
-    # Vérification des dépendances
-    issues = check_dependencies()
-    for issue in issues:
-        st.warning(issue)
-    
-    # Sidebar
-    render_mode_selector()
-    render_expert_options()
-    
-    # Determine current phase
+def render_top_nav(active: str):
+    """Barre de navigation façon onglets (pilotable par code, contrairement à st.tabs)."""
+    c1, c2, c3 = st.columns([1, 1, 3])
+    with c1:
+        if st.button("🆕 Créer un pack", use_container_width=True,
+                     type="primary" if active == "create" else "secondary",
+                     key="nav_create"):
+            st.session_state.view = "create"
+            st.rerun()
+    with c2:
+        if st.button("🎧 Ma Lunii", use_container_width=True,
+                     type="primary" if active == "lunii" else "secondary",
+                     key="nav_lunii"):
+            st.session_state.view = "lunii"
+            st.rerun()
+    st.markdown("")
+
+
+def render_home_choice():
+    """Écran d'accueil : choix entre créer un pack ou gérer sa Lunii."""
+    st.markdown("### Que souhaitez-vous faire ?")
+    c1, c2 = st.columns(2)
+    with c1:
+        with st.container(border=True):
+            st.markdown("#### 🆕 Créer un pack")
+            st.markdown(
+                "Importez du contenu (podcast RSS, fichiers audio, ZIP), prévisualisez "
+                "la navigation et générez un pack pour votre boîte à histoires."
+            )
+            if st.button("Commencer", type="primary", use_container_width=True, key="home_create"):
+                st.session_state.view = "create"
+                st.rerun()
+    with c2:
+        with st.container(border=True):
+            st.markdown("#### 🎧 Ma Lunii")
+            st.markdown(
+                "Connectez votre Lunii pour installer un pack déjà téléchargé, "
+                "réordonner ou supprimer vos packs — sans rien générer."
+            )
+            if st.button("Gérer ma Lunii", type="primary", use_container_width=True, key="home_lunii"):
+                st.session_state.view = "lunii"
+                st.rerun()
+
+
+def render_create_flow():
+    """Parcours de création d'un pack : import → aperçu → téléchargement → conversion Lunii."""
     pack_ready = st.session_state.get('generation_complete') and st.session_state.get('output_zip_data')
-    
+
     # === SECTION 1: Import ===
     with st.expander("📥 1. Importer votre contenu", expanded=not pack_ready):
         render_input_tabs()
-    
-    # === SECTION 2: Aperçu & Vérification ===
+
     if pack_ready:
+        # === SECTION 2: Aperçu & Vérification ===
         with st.expander("👁️ 2. Aperçu & Vérification", expanded=True):
             render_simulator_tab()
-        
+
         # === SECTION 3: Download ===
         with st.expander("📥 3. Télécharger le pack", expanded=True):
             col1, col2 = st.columns([2, 1])
@@ -1799,21 +1831,77 @@ def main():
                     st.session_state.output_pack_filename,
                     st.session_state.output_zip_data,
                 )
-        # === SECTION 4: Upload Lunii ===
-        with st.expander("🎧 4. Uploader dans ma Lunii", expanded=not st.session_state.get('lunii_conversion_complete')):
-            render_lunii_upload()
+
+        # === SECTION 4: Conversion Lunii ===
+        with st.expander("🎧 4. Convertir pour ma Lunii",
+                         expanded=not st.session_state.get('lunii_conversion_complete')):
+            render_lunii_conversion()
     else:
-        # Show disabled placeholders for sections 2, 3, and 4
         st.markdown("---")
         st.markdown("##### 👁️ 2. Aperçu & Vérification")
         st.info("💡 Générez d'abord un pack pour accéder à l'aperçu")
-        
+
         st.markdown("##### 📥 3. Télécharger")
         st.info("💡 Générez d'abord un pack pour le télécharger")
-        
-        st.markdown("##### 🎧 4. Uploader dans ma Lunii")
-        st.info("💡 Générez d'abord un pack pour l'envoyer vers votre Lunii")
-    
+
+        st.markdown("##### 🎧 4. Convertir pour ma Lunii")
+        st.info("💡 Générez d'abord un pack pour le convertir")
+
+
+def render_lunii_view():
+    """Vue « Ma Lunii » : gestionnaire d'appareil autonome (sans génération préalable)."""
+    st.markdown("### 🎧 Ma Lunii")
+    st.markdown(
+        "Connectez votre boîte à histoires Lunii pour installer un pack, "
+        "réordonner ou supprimer vos histoires."
+    )
+
+    if st.session_state.get('lunii_pending_install') and st.session_state.get('lunii_zip_data'):
+        st.success(f"✅ Pack prêt à installer : **{st.session_state.lunii_zip_filename}**")
+        st.caption(
+            "Si vous ne l'avez pas encore téléchargé, récupérez-le ci-dessous, "
+            "puis connectez votre Lunii et utilisez le bouton d'installation."
+        )
+        serve_download_link(
+            "📥 Télécharger le Pack Lunii",
+            st.session_state.lunii_zip_filename,
+            st.session_state.lunii_zip_data,
+        )
+        st.markdown("---")
+
+    _render_lunii_manager()
+
+
+def main():
+    """Point d'entrée principal de l'application."""
+    # Initialisation
+    init_session_state()
+
+    # Tracking Umami (analytics)
+    inject_umami_analytics()
+
+    # En-tête
+    render_header()
+
+    # Vérification des dépendances
+    issues = check_dependencies()
+    for issue in issues:
+        st.warning(issue)
+
+    view = st.session_state.get('view', 'home')
+
+    if view == 'lunii':
+        render_top_nav('lunii')
+        render_lunii_view()
+    elif view == 'create':
+        render_top_nav('create')
+        # Sidebar (options de génération) — pertinente uniquement pour la création
+        render_mode_selector()
+        render_expert_options()
+        render_create_flow()
+    else:  # 'home'
+        render_home_choice()
+
     # Legal notice
     render_legal_notice()
 
