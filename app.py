@@ -189,17 +189,16 @@ def track_event(event_name: str, data: dict = None):
     components.html(js, height=0)
 
 
-def serve_download_link(label: str, filename: str, data: bytes):
-    """Render a download as a real HTTP link served by Streamlit static serving.
+def _write_download_file(data: bytes) -> str:
+    """Write `data` under static/downloads/ (content-addressed) and return the
+    served relative path (app/static/downloads/<sha1>.zip).
 
-    st.download_button embeds the whole payload into the page (base64 over the
-    websocket), which makes the browser hang/freeze on large packs. Instead we
-    write the bytes under static/downloads/ and render a normal <a download> link
-    that the browser streams directly. The served file name is content-addressed
-    (sha1) so regenerating a pack yields a fresh link automatically.
+    Shared by serve_download_link (a normal <a download> link) and the Lunii
+    auto-install flow (the browser component fetches this same URL). Serving via
+    a real HTTP file avoids st.download_button, which embeds the whole payload in
+    the page and freezes the browser on large packs.
     """
     import hashlib
-    import html
 
     downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "downloads")
     os.makedirs(downloads_dir, exist_ok=True)
@@ -219,17 +218,24 @@ def serve_download_link(label: str, filename: str, data: bytes):
 
     digest = hashlib.sha1(data).hexdigest()[:16]
     served_path = os.path.join(downloads_dir, f"{digest}.zip")
+    if not os.path.exists(served_path):
+        with open(served_path, "wb") as f:
+            f.write(data)
+    logger.info(
+        f"[download] served -> {served_path} ({len(data)} bytes) "
+        f"exists={os.path.exists(served_path)}"
+    )
+    return f"app/static/downloads/{digest}.zip"
+
+
+def serve_download_link(label: str, filename: str, data: bytes):
+    """Render a download as a real HTTP link served by Streamlit static serving."""
+    import html
+
     try:
-        if not os.path.exists(served_path):
-            with open(served_path, "wb") as f:
-                f.write(data)
-        logger.info(
-            f"[download] served '{filename}' -> {served_path} "
-            f"({len(data)} bytes) exists={os.path.exists(served_path)} "
-            f"size_on_disk={os.path.getsize(served_path) if os.path.exists(served_path) else 'MISSING'}"
-        )
+        href = _write_download_file(data)
     except Exception as e:
-        logger.error(f"[download] failed to write {served_path}: {e}", exc_info=True)
+        logger.error(f"[download] failed to write file: {e}", exc_info=True)
         st.error(f"Erreur lors de la préparation du téléchargement : {e}")
         return
 
@@ -241,7 +247,6 @@ def serve_download_link(label: str, filename: str, data: bytes):
             "Si le téléchargement échoue, réessayez ou contactez le support."
         )
 
-    href = f"app/static/downloads/{digest}.zip"
     safe_filename = html.escape(filename or "pack.zip", quote=True)
     st.markdown(
         f'<a href="{href}" download="{safe_filename}" '
@@ -250,6 +255,54 @@ def serve_download_link(label: str, filename: str, data: bytes):
         f'text-decoration:none;font-weight:600;box-sizing:border-box;">{label}</a>',
         unsafe_allow_html=True,
     )
+
+
+def _prepare_lunii_pack(zip_bytes: bytes, filename: str):
+    """From an uploaded .zip (Studio or Lunii format), return the bytes ready to
+    install on the device.
+
+    Returns (lunii_bytes, lunii_name, None) on success, or (None, None, error).
+    A pack already in Lunii format is returned as-is; a Studio pack is converted.
+    """
+    import tempfile
+
+    tmp_in = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+            tf.write(zip_bytes)
+            tmp_in = tf.name
+
+        if is_lunii_pack(tmp_in):
+            return zip_bytes, filename, None
+
+        is_valid, msg = validate_studio_pack(tmp_in)
+        if not is_valid:
+            return None, None, f"Format de pack non reconnu : {msg}"
+
+        out_path = tmp_in[:-4] + "_lunii.zip"
+        converter = LuniiPackConverter(zip_path=tmp_in, version="V2")
+        result = converter.convert(output_path=out_path)
+        if not result or not os.path.exists(result):
+            return None, None, "La conversion au format Lunii a échoué (voir les logs)."
+
+        with open(result, "rb") as f:
+            lunii_bytes = f.read()
+        try:
+            os.unlink(result)
+        except OSError:
+            pass
+
+        base = os.path.splitext(os.path.basename(filename))[0]
+        return lunii_bytes, f"{base}_lunii.zip", None
+    except Exception as e:
+        logger.error(f"[lunii import] preparation failed: {e}", exc_info=True)
+        return None, None, str(e)
+    finally:
+        if tmp_in:
+            try:
+                os.unlink(tmp_in)
+            except OSError:
+                pass
 
 
 def init_session_state():
@@ -1642,10 +1695,16 @@ def _run_lunii_conversion(version: str, aes_key=None, aes_iv=None):
         logger.error(f"Lunii conversion error: {e}", exc_info=True)
 
 
-def _render_lunii_manager():
-    """Render the embedded Lunii device manager."""
+def _render_lunii_manager(autoinstall=None):
+    """Render the embedded Lunii device manager.
+
+    `autoinstall` (optional dict {"path": <served zip url>, "title": str}) is
+    injected as window.LUNII_AUTOINSTALL; the component then offers a one-click
+    install that fetches that URL — no large payload embedded in the page.
+    """
+    import json
     import streamlit.components.v1 as components
-    
+
     # Read the JS file
     js_path = os.path.join(os.path.dirname(__file__), "static", "lunii_manager.js")
     try:
@@ -1654,6 +1713,9 @@ def _render_lunii_manager():
     except FileNotFoundError:
         st.error("Fichier lunii_manager.js introuvable")
         return
+
+    # Inject the prepared-pack info (escape </ so a title can't break out of <script>).
+    autoinstall_js = json.dumps(autoinstall or None).replace("</", "<\\/")
     
     html = f"""
     <!DOCTYPE html>
@@ -1731,11 +1793,12 @@ def _render_lunii_manager():
     </head>
     <body>
       <div id="lunii-manager"></div>
+      <script>window.LUNII_AUTOINSTALL = {autoinstall_js};</script>
       <script>{js_code}</script>
     </body>
     </html>
     """
-    
+
     components.html(html, height=600, scrolling=True)
 
 
@@ -1849,27 +1912,62 @@ def render_create_flow():
 
 
 def render_lunii_view():
-    """Vue « Ma Lunii » : gestionnaire d'appareil autonome (sans génération préalable)."""
+    """Vue « Ma Lunii » : gestionnaire d'appareil autonome (sans génération préalable).
+
+    Prépare éventuellement un pack à installer (issu de la création ou d'un import
+    Studio/Lunii) et le passe au composant, qui le récupère par fetch d'URL.
+    """
     st.markdown("### 🎧 Ma Lunii")
     st.markdown(
         "Connectez votre boîte à histoires Lunii pour installer un pack, "
         "réordonner ou supprimer vos histoires."
     )
 
-    if st.session_state.get('lunii_pending_install') and st.session_state.get('lunii_zip_data'):
-        st.success(f"✅ Pack prêt à installer : **{st.session_state.lunii_zip_filename}**")
-        st.caption(
-            "Si vous ne l'avez pas encore téléchargé, récupérez-le ci-dessous, "
-            "puis connectez votre Lunii et utilisez le bouton d'installation."
-        )
-        serve_download_link(
-            "📥 Télécharger le Pack Lunii",
-            st.session_state.lunii_zip_filename,
-            st.session_state.lunii_zip_data,
-        )
-        st.markdown("---")
+    autoinstall = None
 
-    _render_lunii_manager()
+    # (a) Pack fraîchement converti dans le parcours de création → prêt à installer.
+    if st.session_state.get('lunii_pending_install') and st.session_state.get('lunii_zip_data'):
+        try:
+            href = _write_download_file(st.session_state.lunii_zip_data)
+            autoinstall = {"path": href, "title": st.session_state.get('lunii_zip_filename') or "pack"}
+        except Exception as e:
+            logger.error(f"[lunii view] failed to stage pending pack: {e}", exc_info=True)
+
+    # (b) Import d'un pack (Studio → conversion auto, ou Lunii → tel quel).
+    with st.expander("📦 Importer un pack (Studio ou Lunii)", expanded=not autoinstall):
+        st.caption(
+            "Déposez un .zip au format Studio (converti automatiquement) ou déjà au "
+            "format Lunii. Il sera prêt à installer sur l'appareil ci-dessous."
+        )
+        uploaded = st.file_uploader("Fichier .zip", type=["zip"], key="lunii_import_upload")
+        if uploaded is not None:
+            file_sig = f"{uploaded.name}:{uploaded.size}"
+            if st.session_state.get('lunii_import_sig') != file_sig:
+                with st.spinner("Préparation du pack (conversion si nécessaire)…"):
+                    lunii_bytes, lunii_name, err = _prepare_lunii_pack(uploaded.getvalue(), uploaded.name)
+                if err:
+                    st.session_state.lunii_import_result = None
+                    st.session_state.lunii_import_error = err
+                else:
+                    st.session_state.lunii_import_result = {
+                        "path": _write_download_file(lunii_bytes),
+                        "title": lunii_name,
+                    }
+                    st.session_state.lunii_import_error = None
+                st.session_state.lunii_import_sig = file_sig
+            if st.session_state.get('lunii_import_error'):
+                st.error(f"❌ {st.session_state.lunii_import_error}")
+            elif st.session_state.get('lunii_import_result'):
+                autoinstall = st.session_state.lunii_import_result
+                st.success(f"✅ Prêt à installer : **{autoinstall['title']}**")
+
+    if autoinstall:
+        st.info(
+            "🎧 Connectez votre Lunii ci-dessous, puis cliquez sur "
+            "**« Installer le pack préparé »**."
+        )
+
+    _render_lunii_manager(autoinstall=autoinstall)
 
 
 def main():

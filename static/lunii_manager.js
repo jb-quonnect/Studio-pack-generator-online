@@ -646,6 +646,37 @@
         }
     }
 
+    // ─── Install a server-prepared pack (fetched from a URL) ─────────────────
+    // The Python side exposes the ready-to-install zip at a static URL and passes
+    // its path via window.LUNII_AUTOINSTALL. We fetch it (the static endpoint sets
+    // Access-Control-Allow-Origin: *) and reuse the normal install path — this
+    // avoids embedding a large payload in the page.
+
+    async function installPrepared() {
+        const info = window.LUNII_AUTOINSTALL;
+        if (!info || !info.path) return;
+        try {
+            // Resolve against the parent app URL (the component runs in an iframe).
+            const base = document.referrer || window.location.href;
+            const url = new URL(info.path, base).href;
+
+            isInstalling = true;
+            renderUI();
+            updateInstallStatus('Téléchargement du pack préparé…');
+
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('Téléchargement échoué (HTTP ' + resp.status + ')');
+            const blob = await resp.blob();
+
+            window.LUNII_AUTOINSTALL = null;  // consume: don't offer it again
+            await installPackFromZip(blob);
+        } catch (e) {
+            isInstalling = false;
+            showNotification('Erreur: ' + e.message, true);
+            renderUI();
+        }
+    }
+
     // ─── Render ──────────────────────────────────────────────────────────────
 
     function renderUI() {
@@ -665,11 +696,16 @@
 
         // Not connected
         if (!deviceHandle) {
+            const prep = window.LUNII_AUTOINSTALL;
+            const prepHint = (prep && prep.path)
+                ? `<p style="color:#7ed47e">📦 Un pack est prêt à être installé${prep.title ? ' (' + escapeHtml(prep.title) + ')' : ''} — connectez votre appareil pour l'installer.</p>`
+                : '';
             container.innerHTML = `
         <div class="lm-connect">
           <div class="lm-icon">🎧</div>
           <h3>Gérer ma Lunii</h3>
           <p>Branchez votre Lunii en USB, puis sélectionnez son dossier racine</p>
+          ${prepHint}
           <button class="lm-btn lm-btn-primary" onclick="LuniiManager.connect()">
             🔌 Connecter mon appareil
           </button>
@@ -704,14 +740,21 @@
       </div>
     `).join('');
 
+        const prepared = window.LUNII_AUTOINSTALL;
+        const preparedBtn = (prepared && prepared.path)
+            ? `<button class="lm-btn lm-btn-primary lm-btn-install" onclick="LuniiManager.installPrepared()">
+                 📦 Installer le pack préparé${prepared.title ? ' : ' + escapeHtml(prepared.title) : ''}
+               </button>`
+            : '';
         const installSection = isInstalling
             ? `<div class="lm-installing">
            <div class="lm-spinner"></div>
            <span id="lm-install-status">Installation en cours...</span>
          </div>`
             : `<div class="lm-install-bar">
-           <label class="lm-btn lm-btn-primary lm-btn-install">
-             📦 Installer un pack
+           ${preparedBtn}
+           <label class="lm-btn ${prepared && prepared.path ? 'lm-btn-sm' : 'lm-btn-primary'} lm-btn-install">
+             📦 Installer un autre pack (.zip)
              <input type="file" accept=".zip" onchange="LuniiManager.handleFile(event)" style="display:none">
            </label>
            <span class="lm-install-hint">${packs.length} pack${packs.length > 1 ? 's' : ''} installé${packs.length > 1 ? 's' : ''}</span>
@@ -778,6 +821,7 @@
         toggleMenu: toggleMenu,
         showDetails: showDetails,
         handleFile: handleFileSelect,
+        installPrepared: installPrepared,
         init: renderUI
     };
 
